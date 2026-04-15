@@ -3,8 +3,8 @@ FROM node:22-slim AS base
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm install -g npm@latest && npm install --omit=optional
+COPY package.json ./
+RUN npm install --omit=optional
 
 # Build the app
 FROM base AS builder

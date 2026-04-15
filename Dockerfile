@@ -4,7 +4,7 @@ FROM node:22-slim AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json ./
-RUN npm install --omit=optional
+RUN npm install
 
 # Build the app
 FROM base AS builder

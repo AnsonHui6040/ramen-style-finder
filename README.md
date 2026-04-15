@@ -10,6 +10,9 @@
 - 過敏原排除與警示
 - 正式結果頁：主結果、次選項、原因與推薦比例
 
+## 實作網頁
+https://ircoofrbgpyx.ap-northeast-1.clawcloudrun.com/
+
 ## 本機執行
 
 ```bash

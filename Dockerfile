@@ -1,10 +1,10 @@
-FROM node:22-alpine AS base
+FROM node:22-slim AS base
 
 # Install dependencies
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm install
+RUN npm install --omit=optional
 
 # Build the app
 FROM base AS builder

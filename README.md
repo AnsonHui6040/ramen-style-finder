@@ -28,25 +28,6 @@
 
 [線上體驗](https://ircoofrbgpyx.ap-northeast-1.clawcloudrun.com/)
 
-## 本機執行
-
-```bash
-npm install
-npm run dev
-```
-
-瀏覽器開啟：
-
-```bash
-http://localhost:3000
-```
-
-## 建置檢查
-
-```bash
-npm run build
-npm run typecheck
-```
 
 ## 專案結構
 

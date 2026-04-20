@@ -26,7 +26,7 @@
 
 ## 實作網頁
 
-[線上體驗](https://ircoofrbgpyx.ap-northeast-1.clawcloudrun.com/)
+[線上體驗](https://ircoofrbgpyx.ap-northeast-1.clawcloudrun.com)
 
 
 ## 專案結構

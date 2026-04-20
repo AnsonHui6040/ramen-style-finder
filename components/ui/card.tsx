@@ -6,7 +6,12 @@ function join(...parts: Array<string | undefined>) {
 }
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={join("border border-slate-200 bg-white shadow-sm", className)} {...props} />;
+  return (
+    <div
+      className={join("border border-ink-soft bg-paper transition-[box-shadow,transform] hover:shadow-[3px_3px_0_oklch(0.4_0.02_60/0.12)] hover:-translate-y-px", className)}
+      {...props}
+    />
+  );
 }
 
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -14,11 +19,11 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={join("font-semibold tracking-tight", className)} {...props} />;
+  return <h3 className={join("font-hand font-semibold tracking-tight text-ink", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={join("text-sm text-slate-500", className)} {...props} />;
+  return <p className={join("text-sm text-ink-soft", className)} {...props} />;
 }
 
 export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

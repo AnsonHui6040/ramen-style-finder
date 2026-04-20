@@ -83,10 +83,8 @@ function getProgressStage(flow: FlowState): number {
       return 4;
     case "ALLERGENS":
       return 5;
-    case "RESULT_READY":
-      return 6;
     case "RESULT_VIEW":
-      return 7;
+      return 6;
     default:
       return 0;
   }
@@ -145,10 +143,8 @@ function getPreviousState(current: FlowState): FlowState {
       return "PROTEIN_PREFERENCES";
     case "ALLERGENS":
       return "NOODLE_TOPPING";
-    case "RESULT_READY":
-      return "ALLERGENS";
     case "RESULT_VIEW":
-      return "RESULT_READY";
+      return "ALLERGENS";
     default:
       return current;
   }
@@ -234,9 +230,7 @@ export function classifierReducer(state: ClassifierState, action: ClassifierActi
         case "NOODLE_TOPPING":
           return state.validation.noodleToppingValid ? transition(state, "ALLERGENS") : state;
         case "ALLERGENS":
-          return state.validation.allergenConfirmed ? transition(state, "RESULT_READY") : state;
-        case "RESULT_READY":
-          return classifierReducer(state, { type: "GENERATE_RESULT" });
+          return state.validation.allergenConfirmed ? classifierReducer(state, { type: "GENERATE_RESULT" }) : state;
         default:
           return state;
       }

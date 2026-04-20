@@ -50,7 +50,6 @@ const FLOW_STEPS: Array<{ state: FlowState; label: string }> = [
   { state: "PROTEIN_PREFERENCES", label: "素材接受度" },
   { state: "NOODLE_TOPPING", label: "麵與配料" },
   { state: "ALLERGENS", label: "過敏與排除" },
-  { state: "RESULT_READY", label: "整理結果" },
   { state: "RESULT_VIEW", label: "結果" },
 ];
 
@@ -65,7 +64,7 @@ function progressValue(state: FlowState): number {
 function pageTitle(state: FlowState): string {
   switch (state) {
     case "INTRO":
-      return "拉麵口味風格";
+      return "拉麵口味分類器";
     case "CORE_AXES":
       return "先抓你的整體口味方向";
     case "FLAVOR_PROFILE":
@@ -76,8 +75,6 @@ function pageTitle(state: FlowState): string {
       return "最後補麵條口感和配料細節";
     case "ALLERGENS":
       return "最後確認有沒有需要避開的食材";
-    case "RESULT_READY":
-      return "準備揭曉你的結果";
     case "RESULT_VIEW":
       return "你的拉麵口味風格";
     default:
@@ -88,7 +85,7 @@ function pageTitle(state: FlowState): string {
 function pageDescription(state: FlowState): string {
   switch (state) {
     case "INTRO":
-      return "";
+      return "這是一個以整體口味偏好為核心的拉麵分類器，透過逐步問卷分析湯頭、風味、麵體與食材接受度，幫助你找出最適合自己的拉麵口味風格與相近類型。";
     case "CORE_AXES":
       return "先不用想流派名字，直接回答你想吃得清爽一點、濃一點、重口一點，還是麵體更有存在感。";
     case "FLAVOR_PROFILE":
@@ -99,8 +96,6 @@ function pageDescription(state: FlowState): string {
       return "麵在這版的影響力拉高了，所以這一步不只是補充，真的會影響你最後是哪一型。";
     case "ALLERGENS":
       return "高風險素材會直接排除，中度風險則會提醒你注意。";
-    case "RESULT_READY":
-      return "你前面的偏好已經收得差不多了，下一步就會整理出你的主型、接近型，以及最像你的幾種拉麵風格。";
     case "RESULT_VIEW":
       return "先看你屬於哪一型，再看你靠近哪型、偏愛哪些食材方向，以及最像你的幾種實際風格。";
     default:
@@ -133,8 +128,6 @@ function canGoNext(state: ClassifierState): boolean {
       return state.validation.noodleToppingValid;
     case "ALLERGENS":
       return state.validation.allergenConfirmed;
-    case "RESULT_READY":
-      return state.validation.resultEligible;
     case "RESULT_VIEW":
       return false;
     default:
@@ -144,7 +137,6 @@ function canGoNext(state: ClassifierState): boolean {
 
 function nextLabel(state: FlowState): string {
   if (state === "INTRO") return "開始分類";
-  if (state === "RESULT_READY") return "顯示結果";
   return "下一步";
 }
 
@@ -194,20 +186,17 @@ function SliderCard({
   onChange: (value: number) => void;
 }) {
   return (
-    <Card className="rounded-[1.25rem] border-slate-200 shadow-sm shadow-slate-200/50">
+    <Card className="border-ink-soft">
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="text-base leading-6">{question.title}</CardTitle>
             {question.helper ? <CardDescription className="mt-1 leading-6">{question.helper}</CardDescription> : null}
           </div>
-          <div className="rounded-full bg-slate-900 px-3 py-1 text-sm font-semibold text-white">
-            {Math.round(value)}
-          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between text-xs text-slate-500 sm:text-sm">
+        <div className="flex items-center justify-between text-xs text-ink-faint sm:text-sm">
           <span>{question.leftLabel}</span>
           <span>{question.rightLabel}</span>
         </div>
@@ -222,21 +211,32 @@ function SliderCard({
           className="ramen-range w-full"
         />
 
-        <div className="grid grid-cols-5 gap-2">
-          {QUICK_VALUES.map((preset) => {
+        <div className="grid grid-cols-5">
+          {QUICK_VALUES.map((preset, index) => {
             const active = Math.round(value) === preset;
+            const sizes = [28, 22, 22, 22, 28];
+            const size = sizes[index];
+            const hollow = preset === 50;
+            const color = active ? "oklch(0.52 0.14 35)" : "oklch(0.26 0.01 60 / 0.25)";
             return (
               <button
                 key={preset}
                 type="button"
                 onClick={() => onChange(preset)}
-                className={`min-h-11 rounded-xl border text-sm font-medium transition ${
-                  active
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-slate-50 text-slate-700 active:bg-slate-100"
-                }`}
+                className="flex items-center justify-center min-h-11 transition"
+                aria-label={String(preset)}
               >
-                {preset}
+                <span
+                  style={{
+                    width: size,
+                    height: size,
+                    borderRadius: "50%",
+                    display: "block",
+                    flexShrink: 0,
+                    backgroundColor: hollow ? "transparent" : color,
+                    border: `2px solid ${color}`,
+                  }}
+                />
               </button>
             );
           })}
@@ -281,24 +281,24 @@ function AxisMeter({
   right: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+    <div className="border border-ink-soft bg-paper p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-medium text-slate-900">{label}</div>
-          <div className="mt-1 text-xs text-slate-500">{axisState(value, left, right)}</div>
+          <div className="text-sm font-medium text-ink">{label}</div>
+          <div className="mt-1 text-xs text-ink-faint">{axisState(value, left, right)}</div>
         </div>
-        <div className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">{Math.round(value)}%</div>
+        <div className="bg-paper-deep px-2.5 py-1 font-code text-xs font-medium text-ink-soft">{Math.round(value)}%</div>
       </div>
       <div className="mt-3 space-y-2">
-        <div className="flex items-center justify-between text-xs text-slate-500">
+        <div className="flex items-center justify-between text-xs text-ink-faint">
           <span>{left}</span>
           <span>{right}</span>
         </div>
-        <div className="relative h-3 rounded-full bg-slate-100">
-          <div className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-slate-300 via-slate-500 to-slate-900" style={{ width: `${value}%` }} />
+        <div className="relative h-2.5 bg-paper-deep border border-ink-soft/30">
+          <div className="absolute inset-y-0 left-0 bg-ink" style={{ width: `${value}%` }} />
           <div
-            className="absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border-2 border-white bg-slate-900 shadow-md"
-            style={{ left: `calc(${value}% - 10px)` }}
+            className="absolute top-1/2 h-4 w-4 -translate-y-1/2 border-2 border-paper bg-stamp"
+            style={{ left: `calc(${value}% - 8px)` }}
           />
         </div>
       </div>
@@ -310,11 +310,11 @@ function ScoreBar({ label, value, dark = false }: { label: string; value: number
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
-        <span className={dark ? "text-slate-200" : "text-slate-700"}>{label}</span>
-        <span className={dark ? "font-medium text-white" : "font-medium text-slate-900"}>{value}%</span>
+        <span className={dark ? "text-white/70" : "text-ink-soft"}>{label}</span>
+        <span className={dark ? "font-medium text-white" : "font-medium text-ink"}>{value}%</span>
       </div>
-      <div className={`h-2 overflow-hidden rounded-full ${dark ? "bg-white/15" : "bg-slate-100"}`}>
-        <div className={`h-full rounded-full ${dark ? "bg-white" : "bg-slate-900"}`} style={{ width: `${value}%` }} />
+      <div className={`h-1.5 overflow-hidden ${dark ? "bg-white/15" : "bg-paper-deep"}`}>
+        <div className={`h-full ${dark ? "bg-white" : "bg-ink"}`} style={{ width: `${value}%` }} />
       </div>
     </div>
   );
@@ -364,9 +364,9 @@ function ResultSection({ state }: { state: ClassifierState }) {
   return (
     <div className="space-y-4">
       <Link href={`/types/${snapshot.archetype.code}`} className="block">
-        <Card className="overflow-hidden rounded-[1.75rem] border-slate-900 bg-slate-900 text-white shadow-lg shadow-slate-300/50 transition hover:-translate-y-0.5 hover:shadow-xl">
+        <Card className="overflow-hidden border-ink bg-ink text-white transition hover:-translate-y-0.5 hover:shadow-[4px_4px_0_oklch(0.4_0.02_60/0.25)]">
           <CardHeader className="space-y-4">
-            <div className="inline-flex w-fit items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white">
+            <div className="inline-flex w-fit items-center border border-white/30 px-3 py-1 font-code text-[10px] uppercase tracking-widest text-white/80">
               你的口味主型
             </div>
             <div className="flex items-start justify-between gap-4">
@@ -375,10 +375,10 @@ function ResultSection({ state }: { state: ClassifierState }) {
                 <div className="text-xl font-semibold text-white sm:text-2xl">{snapshot.archetype.name}</div>
               </div>
             </div>
-            <CardDescription className="max-w-3xl text-base leading-8 text-slate-200">
+            <CardDescription className="max-w-3xl text-base leading-8 text-white/70">
               {snapshot.archetype.summary}
             </CardDescription>
-            <CardDescription className="text-sm leading-7 text-slate-300">
+            <CardDescription className="text-sm leading-7 text-white/60">
               點開可以看這型的完整介紹、鄰近型與常見風格。
             </CardDescription>
           </CardHeader>
@@ -395,28 +395,28 @@ function ResultSection({ state }: { state: ClassifierState }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-        <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+        <Card className="border-ink-soft bg-paper ">
           <CardHeader>
-            <CardTitle className="text-base text-slate-950">最像你的風格</CardTitle>
-            <CardDescription className="text-slate-600">這是最接近你目前整體口味輪廓的一種實際風格。</CardDescription>
+            <CardTitle className="text-base text-ink">最像你的風格</CardTitle>
+            <CardDescription className="text-ink-soft">這是最接近你目前整體口味輪廓的一種實際風格。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Top Match</div>
-              <div className="mt-1 text-xl font-semibold text-slate-950">{snapshot.topResult.displayName}</div>
-              <div className="mt-2 text-sm leading-7 text-slate-700">{snapshot.topResult.summary}</div>
+            <div className="bg-paper-light p-4 border border-ink-soft/40">
+              <div className="font-code text-xs uppercase tracking-widest text-ink-faint">Top Match</div>
+              <div className="mt-1 text-xl font-semibold text-ink">{snapshot.topResult.displayName}</div>
+              <div className="mt-2 text-sm leading-7 text-ink-soft">{snapshot.topResult.summary}</div>
             </div>
-            <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="space-y-3 border border-ink-soft bg-paper p-4">
               <ScoreBar label="匹配度" value={snapshot.topResult.score} />
               <ScoreBar label="推薦比例" value={snapshot.topResult.share} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-200/50">
+        <Card className="border-ink-soft bg-paper ">
           <CardHeader>
-            <CardTitle className="text-base text-slate-950">你偏愛的食材方向</CardTitle>
-            <CardDescription className="text-slate-600">這不是在幫你硬分成某一種肉，而是告訴你，你這型通常最容易被哪些食材方向吸引。</CardDescription>
+            <CardTitle className="text-base text-ink">你偏愛的食材方向</CardTitle>
+            <CardDescription className="text-ink-soft">這不是在幫你硬分成某一種肉，而是告訴你，你這型通常最容易被哪些食材方向吸引。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {snapshot.ingredientTags.map((item) => (
@@ -427,10 +427,10 @@ function ResultSection({ state }: { state: ClassifierState }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-        <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+        <Card className="border-ink-soft bg-paper ">
           <CardHeader>
-            <CardTitle className="text-base text-slate-950">四軸分析</CardTitle>
-            <CardDescription className="text-slate-600">這四條軸更能代表你的整體口味，不會被單一湯底或主食材綁死。</CardDescription>
+            <CardTitle className="text-base text-ink">四軸分析</CardTitle>
+            <CardDescription className="text-ink-soft">這四條軸更能代表你的整體口味，不會被單一湯底或主食材綁死。</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
             {axisRows.map((axis) => (
@@ -442,28 +442,28 @@ function ResultSection({ state }: { state: ClassifierState }) {
         <div className="space-y-4">
           {snapshot.borderlineHint ? (
             <Link href={`/types/${snapshot.borderlineHint.code}`} className="block">
-              <Card className="rounded-[1.5rem] border-dashed border-slate-300 bg-white shadow-sm shadow-slate-200/50 transition hover:bg-slate-50">
+              <Card className="border-dashed border-ink-soft bg-paper transition hover:bg-paper-light">
                 <CardHeader>
-                  <CardTitle className="text-base text-slate-950">你其實也很靠近這型</CardTitle>
-                  <CardDescription className="text-slate-600">
+                  <CardTitle className="text-base text-ink">你其實也很靠近這型</CardTitle>
+                  <CardDescription className="text-ink-soft">
                     {snapshot.borderlineHint.code}・{snapshot.borderlineHint.name}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm leading-7 text-slate-700">
+                <CardContent className="space-y-3 text-sm leading-7 text-ink-soft">
                   <div>{snapshot.borderlineHint.summary}</div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="secondary" className="rounded-full">{strengthLabel(snapshot.borderlineHint.strength)}</Badge>
-                    <Badge variant="secondary" className="rounded-full">距離 {snapshot.borderlineHint.distance}</Badge>
+                    <Badge variant="secondary" className="">{strengthLabel(snapshot.borderlineHint.strength)}</Badge>
+                    <Badge variant="secondary" className="">距離 {snapshot.borderlineHint.distance}</Badge>
                   </div>
                 </CardContent>
               </Card>
             </Link>
           ) : null}
 
-          <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-200/50">
+          <Card className="border-ink-soft bg-paper ">
             <CardHeader>
-              <CardTitle className="text-base text-slate-950">為什麼會是這型</CardTitle>
-              <CardDescription className="text-slate-600">這些是影響你結果最明顯的幾個關鍵方向。</CardDescription>
+              <CardTitle className="text-base text-ink">為什麼會是這型</CardTitle>
+              <CardDescription className="text-ink-soft">這些是影響你結果最明顯的幾個關鍵方向。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {snapshot.reasons.map((reason) => (
@@ -474,21 +474,21 @@ function ResultSection({ state }: { state: ClassifierState }) {
         </div>
       </div>
 
-      <Card className="rounded-[1.5rem] border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+      <Card className="border-ink-soft bg-paper ">
         <CardHeader>
-          <CardTitle className="text-base text-slate-950">最像你的幾款風格</CardTitle>
-          <CardDescription className="text-slate-600">這裡是把你的口味風格，對應到實際比較像你的幾種拉麵方向。</CardDescription>
+          <CardTitle className="text-base text-ink">最像你的幾款風格</CardTitle>
+          <CardDescription className="text-ink-soft">這裡是把你的口味風格，對應到實際比較像你的幾種拉麵方向。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {[snapshot.topResult, ...snapshot.secondaryResults].map((item, index) => (
-            <div key={item.typeId} className={`rounded-2xl border p-4 ${index === 0 ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white"}`}>
+            <div key={item.typeId} className={`border p-4 ${index === 0 ? "border-ink bg-ink text-white" : "border-ink-soft bg-paper"}`}>
               <div className="flex items-start gap-4">
                 <div>
-                  <div className={`text-xs uppercase tracking-wide ${index === 0 ? "text-slate-200" : "text-slate-600"}`}>
+                  <div className={`text-xs uppercase tracking-wide ${index === 0 ? "text-white/70" : "text-ink-soft"}`}>
                     {index === 0 ? "Top Match" : `候選 ${index + 1}`}
                   </div>
-                  <div className={`mt-1 text-lg font-semibold ${index === 0 ? "text-white" : "text-slate-950"}`}>{item.displayName}</div>
-                  <div className={`mt-1 text-sm leading-7 ${index === 0 ? "text-slate-200" : "text-slate-700"}`}>{item.summary}</div>
+                  <div className={`mt-1 text-lg font-semibold ${index === 0 ? "text-white" : "text-ink"}`}>{item.displayName}</div>
+                  <div className={`mt-1 text-sm leading-7 ${index === 0 ? "text-white/70" : "text-ink-soft"}`}>{item.summary}</div>
                 </div>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -501,7 +501,7 @@ function ResultSection({ state }: { state: ClassifierState }) {
       </Card>
 
       {(snapshot.blockedByAllergen.length > 0 || snapshot.warningByAllergen.length > 0) ? (
-        <Card className="rounded-[1.5rem] border-amber-200 bg-amber-50 shadow-sm shadow-amber-100/80">
+        <Card className="border-amber-300 bg-amber-50">
           <CardHeader>
             <CardTitle className="text-base text-amber-900">過敏原提醒</CardTitle>
           </CardHeader>
@@ -568,30 +568,7 @@ export default function ClassifierShell() {
     previousFlowRef.current = current;
   }, [state.currentState]);
 
-  const introView = (
-    <Card className="overflow-hidden rounded-[1.75rem] border-slate-200 bg-white shadow-lg shadow-slate-200/60">
-      <CardHeader>
-        <CardTitle className="text-xl text-slate-950 sm:text-2xl">最後你會看到這三塊</CardTitle>
-        <CardDescription className="mt-1 leading-7 text-slate-600">
-          先看整體口味方向，再看你通常會被哪些食材吸引，最後才對應到最像你的幾種實際風格。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
-          <div className="font-medium text-slate-950">口味主型</div>
-          <div className="mt-1">先看你的整體風格大方向</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
-          <div className="font-medium text-slate-950">食材方向</div>
-          <div className="mt-1">再看你通常會被哪些食材吸引</div>
-        </div>
-        <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700">
-          <div className="font-medium text-slate-950">實際風格</div>
-          <div className="mt-1">最後才落到最像你的幾種拉麵</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  const introView = null;
 
   const body = useMemo(() => {
     switch (state.currentState) {
@@ -647,8 +624,8 @@ export default function ClassifierShell() {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                <div className="font-medium text-slate-900">配料偏好</div>
+              <div className="border-l-2 border-stamp bg-paper-light p-4 text-sm leading-6 text-ink-soft">
+                <div className="font-hand font-medium text-ink">配料偏好</div>
                 <div className="mt-1">這一段是細修正層，不會反客為主，但會影響最後原型排序。</div>
               </div>
               {renderQuestionList<ToppingAnswers>({
@@ -666,7 +643,7 @@ export default function ClassifierShell() {
 
       case "ALLERGENS":
         return (
-          <Card className="rounded-[1.5rem] border-slate-200 shadow-sm shadow-slate-200/50">
+          <Card className="border-ink-soft ">
             <CardHeader>
               <CardTitle className="text-base">哪些素材需要避開？</CardTitle>
               <CardDescription>高風險素材會直接封鎖，中度風險會作警示與降權。</CardDescription>
@@ -674,7 +651,7 @@ export default function ClassifierShell() {
             <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 {ALLERGEN_OPTIONS.map((option) => (
-                  <label key={option.id} className="flex min-h-14 items-start gap-3 rounded-2xl border border-slate-200 p-4 text-sm leading-6 active:bg-slate-50">
+                  <label key={option.id} className="flex min-h-14 items-start gap-3 border border-ink-soft p-4 text-sm leading-6 active:bg-paper-light">
                     <input
                       type="checkbox"
                       className="mt-1 h-5 w-5"
@@ -687,8 +664,8 @@ export default function ClassifierShell() {
                       }
                     />
                     <span>
-                      <span className="font-medium text-slate-900">{option.label}</span>
-                      {option.helper ? <span className="mt-1 block text-slate-500">{option.helper}</span> : null}
+                      <span className="font-medium text-ink">{option.label}</span>
+                      {option.helper ? <span className="mt-1 block text-ink-faint">{option.helper}</span> : null}
                     </span>
                   </label>
                 ))}
@@ -696,28 +673,11 @@ export default function ClassifierShell() {
 
               <Button
                 variant={state.allergenConfirmed ? "secondary" : "default"}
-                className="w-full rounded-2xl"
+                className="w-full"
                 onClick={() => dispatch({ type: "CONFIRM_ALLERGENS" })}
               >
                 {state.allergenConfirmed ? "已確認過敏與排除條件" : "確認這一頁"}
               </Button>
-            </CardContent>
-          </Card>
-        );
-
-      case "RESULT_READY":
-        return (
-          <Card className="rounded-[1.5rem] border-slate-200 shadow-sm shadow-slate-200/50">
-            <CardHeader>
-              <CardTitle>可以產生結果了</CardTitle>
-              <CardDescription>目前必要題已完成，下一步將正式產生主型、邊界型、主素材標識與原型匹配。</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              <Badge variant={state.validation.coreAxesValid ? "default" : "secondary"} className="justify-center rounded-full py-2">主型四軸</Badge>
-              <Badge variant={state.validation.flavorProfileValid ? "default" : "secondary"} className="justify-center rounded-full py-2">風味傾向</Badge>
-              <Badge variant={state.validation.proteinPreferencesValid ? "default" : "secondary"} className="justify-center rounded-full py-2">素材接受度</Badge>
-              <Badge variant={state.validation.noodleToppingValid ? "default" : "secondary"} className="justify-center rounded-full py-2">麵條與配料</Badge>
-              <Badge variant={state.validation.allergenConfirmed ? "default" : "secondary"} className="justify-center rounded-full py-2">過敏與排除</Badge>
             </CardContent>
           </Card>
         );
@@ -733,63 +693,75 @@ export default function ClassifierShell() {
   return (
     <>
       <div ref={topAnchorRef} />
-      <div className="mx-auto max-w-5xl space-y-8 px-4 pb-[calc(env(safe-area-inset-bottom)+110px)] pt-[calc(env(safe-area-inset-top)+16px)] md:px-6 md:pb-10 md:pt-6">
-        <div className="space-y-3">
-          <div className="space-y-3 overflow-x-auto pb-1">
-            <div className="flex min-w-max items-center gap-2 text-xs text-slate-500">
-              {FLOW_STEPS.map((item, index) => (
-                <span
-                  key={item.state}
-                  className={`rounded-full px-3 py-2 ${item.state === state.currentState ? "bg-slate-900 font-medium text-white" : "bg-slate-100 text-slate-600"}`}
-                >
-                  {index + 1}. {item.label}
-                </span>
-              ))}
+      <div className={`mx-auto max-w-5xl px-4 md:px-6 ${state.currentState === "INTRO" ? "flex min-h-[100svh] flex-col pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+1rem)] md:pt-6 md:pb-8" : "space-y-8 pt-[calc(env(safe-area-inset-top)+16px)] pb-[calc(env(safe-area-inset-bottom)+110px)] md:pt-6 md:pb-10"}`}>
+        <div className={state.currentState === "INTRO" ? "flex flex-1 flex-col items-center justify-center" : "space-y-3"}>
+          {state.currentState !== "INTRO" && (
+            <div className="space-y-3 overflow-x-auto pb-1">
+              <div className="flex min-w-max items-center gap-2 text-xs text-ink-faint">
+                {FLOW_STEPS.map((item, index) => (
+                  <span
+                    key={item.state}
+                    className={`px-3 py-1.5 font-code text-[10px] uppercase tracking-wider ${item.state === state.currentState ? "bg-ink font-medium text-white" : "bg-paper-deep text-ink-faint"}`}
+                  >
+                    {index + 1}. {item.label}
+                  </span>
+                ))}
+              </div>
+              <Progress value={progressValue(state.currentState)} className="mt-1 h-2.5" />
             </div>
-            <Progress value={progressValue(state.currentState)} className="mt-1 h-2.5" />
-          </div>
+          )}
 
-          <div className="flex items-start gap-4">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{pageTitle(state.currentState)}</h1>
+          {state.currentState === "INTRO" ? (
+            <div className="w-full max-w-xl text-center">
+              <h1 className="font-hand text-4xl font-semibold tracking-tight text-ink sm:text-5xl">{pageTitle(state.currentState)}</h1>
+              <p className="mt-4 text-base leading-8 text-ink-soft">{pageDescription(state.currentState)}</p>
+              <div className="mt-10">
+                <a
+                  href="#type-preview-cards"
+                  className="inline-flex items-center gap-2 border border-ink-soft bg-paper px-5 py-2.5 font-code text-xs tracking-widest text-ink-soft uppercase transition hover:bg-paper-deep hover:text-ink"
+                >
+                  先看看有哪些口味風格
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+                </a>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <h1 className="font-hand text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{pageTitle(state.currentState)}</h1>
+              <Button variant="outline" className="shrink-0 px-3 py-2 text-xs" onClick={() => dispatch({ type: "RESET_FLOW" })}>
+                <RotateCcw className="mr-1.5 h-3 w-3" />重設
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="relative z-10">{body}</div>
 
-        <div className="sticky bottom-0 z-20 -mx-4 border-t border-slate-200 bg-white/95 px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur md:static md:mx-0 md:border-t md:bg-transparent md:px-0 md:pb-0 md:pt-4 md:shadow-none md:backdrop-blur-0">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3">
+        <div className="sticky bottom-0 z-20 -mx-4 border-t border-ink bg-paper-light px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-4 shadow-[0_-4px_0_oklch(0.42_0.01_60/0.15)] md:static md:mx-0 md:border-t md:bg-transparent md:px-0 md:pb-0 md:pt-4 md:shadow-none">
+          <div className="flex gap-3">
+            {state.currentState !== "INTRO" && (
               <Button
                 variant="outline"
-                className="min-h-12 flex-1 rounded-2xl sm:flex-none"
-                onClick={() => dispatch(state.currentState === "INTRO" ? { type: "RESET_FLOW" } : { type: "PREV_STEP" })}
-                disabled={state.currentState === "INTRO"}
+                className="min-h-12 flex-1"
+                onClick={() => dispatch({ type: "PREV_STEP" })}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />上一步
               </Button>
-              <Button variant="outline" className="min-h-12 rounded-2xl sm:hidden" onClick={() => dispatch({ type: "RESET_FLOW" })}>
-                <RotateCcw className="mr-2 h-4 w-4" />重設
+            )}
+            {state.currentState !== "RESULT_VIEW" ? (
+              <Button
+                className="min-h-12 flex-1 px-5"
+                onClick={() => dispatch(state.currentState === "INTRO" ? { type: "START_FLOW" } : { type: "NEXT_STEP" })}
+                disabled={!canGoNext(state)}
+              >
+                {nextLabel(state.currentState)}
+                <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
-            </div>
-
-            <div className="flex gap-3">
-              {state.currentState !== "RESULT_VIEW" ? (
-                <Button
-                  className="min-h-12 flex-1 rounded-2xl px-5 sm:flex-none"
-                  onClick={() => dispatch(state.currentState === "INTRO" ? { type: "START_FLOW" } : { type: "NEXT_STEP" })}
-                  disabled={!canGoNext(state)}
-                >
-                  {nextLabel(state.currentState)}
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-              ) : (
-                <Button className="min-h-12 flex-1 rounded-2xl px-5 sm:flex-none" onClick={() => dispatch({ type: "RESTART_FROM_RESULT" })}>
-                  重新分類
-                </Button>
-              )}
-            </div>
+            ) : (
+              <Button className="min-h-12 flex-1 px-5" onClick={() => dispatch({ type: "RESTART_FROM_RESULT" })}>
+                重新分類
+              </Button>
+            )}
           </div>
         </div>
       </div>

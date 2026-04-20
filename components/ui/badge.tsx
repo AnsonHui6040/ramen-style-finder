@@ -10,9 +10,18 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 export function Badge({ className, variant = "default", ...props }: BadgeProps) {
   const variants = {
-    default: "bg-slate-900 text-white",
-    secondary: "bg-slate-100 text-slate-700",
+    default: "border border-stamp text-stamp font-code",
+    secondary: "border border-ink-soft text-ink-soft bg-paper",
   } as const;
 
-  return <span className={join("inline-flex items-center px-2.5 py-1 text-xs font-medium", variants[variant], className)} {...props} />;
+  return (
+    <span
+      className={join(
+        "inline-flex items-center px-2 py-0.5 text-[10px] tracking-widest",
+        variants[variant],
+        className,
+      )}
+      {...props}
+    />
+  );
 }

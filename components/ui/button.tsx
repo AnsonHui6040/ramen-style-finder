@@ -13,9 +13,9 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 export function Button({ className, variant = "default", disabled, asChild = false, children, ...props }: ButtonProps) {
   const variants: Record<Variant, string> = {
-    default: "bg-slate-900 text-white hover:bg-slate-800 active:bg-slate-950",
-    secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200 active:bg-slate-300",
-    outline: "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 active:bg-slate-100",
+    default: "bg-stamp text-white hover:opacity-90 active:opacity-75",
+    secondary: "bg-paper-light text-ink border border-ink-soft hover:bg-paper-deep",
+    outline: "border border-ink-soft bg-paper text-ink hover:bg-paper-light",
   };
 
   const mergedClassName = join(

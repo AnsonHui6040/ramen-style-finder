@@ -28,14 +28,97 @@
 
 [線上體驗](https://ircoofrbgpyx.ap-northeast-1.clawcloudrun.com)
 
+---
+
+## 本機執行
+
+```bash
+npm install
+npm run dev
+```
+
+瀏覽器開啟：
+
+```bash
+http://localhost:3000
+```
+
+---
+
+## 建置與檢查
+
+```bash
+npm run typecheck
+npm run build
+```
+
+或一次執行完整檢查：
+
+```bash
+npm run check
+```
+
+---
+
+## Docker 建置
+
+本專案使用 Next.js `standalone` 輸出模式，可用 Docker 建置正式映像：
+
+```bash
+docker build -t ramen-style-finder .
+docker run --rm -p 3000:80 ramen-style-finder
+```
+
+開啟：
+
+```bash
+http://localhost:3000
+```
+
+---
 
 ## 專案結構
 
-- `app/`：Next.js app router 頁面
+- `app/`：Next.js App Router 頁面
 - `components/`：UI 元件與主容器
 - `data/`：題庫、分類分支與原型資料
 - `lib/`：reducer、推定邏輯、計分邏輯
 - `types/`：型別定義
+- `.github/workflows/`：GitHub Actions 自動建置流程
+- `Dockerfile`：正式部署映像建置設定
+
+---
+
+## 安全性與優化檢查紀錄
+
+### 2026-04-29
+
+本次檢查目標是不改變既有外觀與頁面結構，只處理底層安全性、穩定性與部署可重現性。
+
+| 類別 | 已處理項目 | 目的 |
+|---|---|---|
+| HTTP 安全標頭 | 在 Next.js 設定加入安全 headers | 降低 MIME sniffing、iframe 嵌入與過度權限暴露風險 |
+| 框架資訊暴露 | 關閉 `X-Powered-By` | 減少不必要的技術指紋資訊 |
+| 前端狀態防呆 | 清洗 `localStorage` 還原資料 | 避免舊版、損壞或被手動改寫的本地資料污染流程 |
+| 輸入值限制 | 將滑桿數值限制於 0–100 | 保持計分邏輯穩定，避免異常數值影響結果 |
+| Docker 建置 | 使用 `npm ci` 與 `package-lock.json` | 提高依賴安裝的一致性與可重現性 |
+| Docker 正式映像 | 使用非 root 使用者執行 | 降低容器執行時權限風險 |
+| 部署前檢查 | Docker build 階段執行 typecheck + build | 讓型別錯誤能在部署前被攔截 |
+| 開發指令 | 新增 `npm run check` | 方便在 VS Code 或部署前一次檢查 |
+
+---
+
+## 後續可做但尚未處理
+
+以下項目不影響現有外觀，可視需要之後再做：
+
+- 加入 ESLint 或 Biome，讓格式與靜態檢查更一致
+- 加入基本單元測試，覆蓋 `lib/scoring.ts`、`lib/archetype.ts` 與 `lib/reducer.ts`
+- 將 Google Fonts 改為 `next/font` 或本地字體，降低外部請求與字體載入延遲
+- 為 GitHub Actions 加入 build cache，加快 Docker image 建置時間
+- 為分類結果加入版本欄位，日後題庫更新時可判斷舊結果是否需要重算
+
+---
 
 ## 智慧財產權與使用聲明
 

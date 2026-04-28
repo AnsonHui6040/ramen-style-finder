@@ -13,8 +13,155 @@ import type {
   ToppingAnswers,
 } from "@/types/ramen";
 
-function countAnsweredNumbers(record: Record<string, unknown>): number {
-  return Object.values(record).filter((value) => typeof value === "number" && Number.isFinite(value)).length;
+const CORE_AXIS_IDS = ["axis_richness", "axis_broth_body", "axis_impact", "axis_noodle_body"] as const;
+const FLAVOR_PROFILE_IDS = ["flavor_meat_vs_sea", "flavor_fermented", "flavor_citrus", "flavor_spice", "flavor_fatty_sweet"] as const;
+const PROTEIN_PREFERENCE_IDS = [
+  "protein_pork",
+  "protein_chicken",
+  "protein_beef",
+  "protein_duck",
+  "protein_shrimp",
+  "protein_shellfish",
+  "protein_fish",
+  "protein_miso",
+] as const;
+const NOODLE_IDS = ["noodle_thickness", "noodle_firmness", "noodle_chewiness", "noodle_curl"] as const;
+const TOPPING_IDS = [
+  "topping_chashu",
+  "topping_beef",
+  "topping_egg",
+  "topping_nori",
+  "topping_spinach",
+  "topping_menma",
+  "topping_veg_pile",
+  "topping_corn",
+  "topping_butter",
+  "topping_garlic",
+  "topping_backfat",
+  "topping_seafood",
+] as const;
+const ALLERGEN_IDS = ["crustacean", "shellfish", "egg", "milk", "beef", "pork"] as const;
+const FLOW_STATES: FlowState[] = [
+  "INTRO",
+  "CORE_AXES",
+  "FLAVOR_PROFILE",
+  "PROTEIN_PREFERENCES",
+  "NOODLE_TOPPING",
+  "ALLERGENS",
+  "RESULT_READY",
+  "RESULT_VIEW",
+];
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function clamp(value: number, min = 0, max = 100): number {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : 50));
+}
+
+function countAnsweredNumbers(record: Record<string, unknown>, allowedKeys: readonly string[]): number {
+  return allowedKeys.filter((key) => typeof record[key] === "number" && Number.isFinite(record[key])).length;
+}
+
+function sanitizeNumberRecord<T extends Record<string, number | undefined>>(
+  source: unknown,
+  allowedKeys: readonly string[],
+): T {
+  if (!isPlainObject(source)) return {} as T;
+
+  return allowedKeys.reduce<Record<string, number>>((acc, key) => {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      acc[key] = clamp(value);
+    }
+    return acc;
+  }, {}) as T;
+}
+
+function sanitizeAllergenAnswers(source: unknown): AllergenAnswers {
+  const defaults = createDefaultAllergenAnswers();
+  if (!isPlainObject(source)) return defaults;
+
+  return ALLERGEN_IDS.reduce<AllergenAnswers>((acc, key) => {
+    acc[key] = source[key] === true;
+    return acc;
+  }, defaults);
+}
+
+function createDefaultAllergenAnswers(): AllergenAnswers {
+  return {
+    crustacean: false,
+    shellfish: false,
+    egg: false,
+    milk: false,
+    beef: false,
+    pork: false,
+  };
+}
+
+function sanitizeFlowState(source: unknown): FlowState {
+  return typeof source === "string" && FLOW_STATES.includes(source as FlowState) ? (source as FlowState) : "INTRO";
+}
+
+function isFlowReachable(state: ClassifierState): boolean {
+  switch (state.currentState) {
+    case "INTRO":
+    case "CORE_AXES":
+      return true;
+    case "FLAVOR_PROFILE":
+      return state.validation.coreAxesValid;
+    case "PROTEIN_PREFERENCES":
+      return state.validation.coreAxesValid && state.validation.flavorProfileValid;
+    case "NOODLE_TOPPING":
+      return state.validation.coreAxesValid && state.validation.flavorProfileValid && state.validation.proteinPreferencesValid;
+    case "ALLERGENS":
+      return state.validation.coreAxesValid && state.validation.flavorProfileValid && state.validation.proteinPreferencesValid && state.validation.noodleToppingValid;
+    case "RESULT_READY":
+    case "RESULT_VIEW":
+      return state.validation.resultEligible;
+    default:
+      return false;
+  }
+}
+
+function sanitizePersistedState(source: unknown): ClassifierState {
+  if (!isPlainObject(source)) return createDefaultClassifierState();
+
+  const defaultState = createDefaultClassifierState();
+  const candidate = withValidation({
+    ...defaultState,
+    currentState: sanitizeFlowState(source.currentState),
+    coreAxisAnswers: sanitizeNumberRecord<CoreAxisAnswers>(source.coreAxisAnswers, CORE_AXIS_IDS),
+    flavorProfileAnswers: sanitizeNumberRecord<FlavorProfileAnswers>(source.flavorProfileAnswers, FLAVOR_PROFILE_IDS),
+    proteinPreferenceAnswers: sanitizeNumberRecord<ProteinPreferenceAnswers>(source.proteinPreferenceAnswers, PROTEIN_PREFERENCE_IDS),
+    noodleAnswers: sanitizeNumberRecord<NoodleAnswers>(source.noodleAnswers, NOODLE_IDS),
+    toppingAnswers: sanitizeNumberRecord<ToppingAnswers>(source.toppingAnswers, TOPPING_IDS),
+    allergenAnswers: sanitizeAllergenAnswers(source.allergenAnswers),
+    allergenConfirmed: source.allergenConfirmed === true,
+    skippedAdvancedAdjustments: source.skippedAdvancedAdjustments === true,
+    inferredMainDirection: typeof source.inferredMainDirection === "string" ? source.inferredMainDirection : null,
+    archetypePreview: null,
+    resultSnapshot: null,
+  });
+
+  const reachableState = isFlowReachable(candidate) ? candidate : { ...candidate, currentState: "INTRO" as const, resultSnapshot: null };
+  const withPreview = withDerivedPreview(reachableState);
+
+  if (withPreview.currentState !== "RESULT_VIEW" && withPreview.currentState !== "RESULT_READY") {
+    return withValidation(withPreview);
+  }
+
+  if (!withPreview.validation.resultEligible) {
+    return withValidation({ ...withPreview, currentState: "ALLERGENS", resultSnapshot: null });
+  }
+
+  try {
+    const snapshot: ResultSnapshot = generateResultSnapshot(withPreview);
+    return withValidation({ ...withPreview, currentState: "RESULT_VIEW", resultSnapshot: snapshot });
+  } catch {
+    return withValidation({ ...withPreview, currentState: "ALLERGENS", resultSnapshot: null });
+  }
 }
 
 export function createDefaultClassifierState(): ClassifierState {
@@ -26,14 +173,7 @@ export function createDefaultClassifierState(): ClassifierState {
     proteinPreferenceAnswers: {},
     noodleAnswers: {},
     toppingAnswers: {},
-    allergenAnswers: {
-      crustacean: false,
-      shellfish: false,
-      egg: false,
-      milk: false,
-      beef: false,
-      pork: false,
-    },
+    allergenAnswers: createDefaultAllergenAnswers(),
     allergenConfirmed: false,
     skippedAdvancedAdjustments: false,
     inferredMainDirection: null,
@@ -51,11 +191,11 @@ export function createDefaultClassifierState(): ClassifierState {
 }
 
 function buildValidation(state: ClassifierState): ClassifierState["validation"] {
-  const coreAxesValid = countAnsweredNumbers(state.coreAxisAnswers) >= 4;
-  const flavorProfileValid = countAnsweredNumbers(state.flavorProfileAnswers) >= 4;
-  const proteinPreferencesValid = countAnsweredNumbers(state.proteinPreferenceAnswers) >= 5;
-  const noodleCount = countAnsweredNumbers(state.noodleAnswers);
-  const toppingCount = countAnsweredNumbers(state.toppingAnswers);
+  const coreAxesValid = countAnsweredNumbers(state.coreAxisAnswers, CORE_AXIS_IDS) >= 4;
+  const flavorProfileValid = countAnsweredNumbers(state.flavorProfileAnswers, FLAVOR_PROFILE_IDS) >= 4;
+  const proteinPreferencesValid = countAnsweredNumbers(state.proteinPreferenceAnswers, PROTEIN_PREFERENCE_IDS) >= 5;
+  const noodleCount = countAnsweredNumbers(state.noodleAnswers, NOODLE_IDS);
+  const toppingCount = countAnsweredNumbers(state.toppingAnswers, TOPPING_IDS);
   const noodleToppingValid = noodleCount >= 3 && toppingCount >= 5;
   const allergenConfirmed = state.allergenConfirmed;
 
@@ -83,6 +223,7 @@ function getProgressStage(flow: FlowState): number {
       return 4;
     case "ALLERGENS":
       return 5;
+    case "RESULT_READY":
     case "RESULT_VIEW":
       return 6;
     default:
@@ -99,7 +240,7 @@ function withValidation(state: ClassifierState): ClassifierState {
 }
 
 function maybeBuildArchetypePreview(state: ClassifierState) {
-  if (countAnsweredNumbers(state.coreAxisAnswers) < 4) return null;
+  if (countAnsweredNumbers(state.coreAxisAnswers, CORE_AXIS_IDS) < 4) return null;
   try {
     return computeArchetypeResult(state);
   } catch {
@@ -143,6 +284,7 @@ function getPreviousState(current: FlowState): FlowState {
       return "PROTEIN_PREFERENCES";
     case "ALLERGENS":
       return "NOODLE_TOPPING";
+    case "RESULT_READY":
     case "RESULT_VIEW":
       return "ALLERGENS";
     default:
@@ -153,7 +295,7 @@ function getPreviousState(current: FlowState): FlowState {
 function answerCoreAxis(state: ClassifierState, payload: { id: keyof CoreAxisAnswers; value: number }): ClassifierState {
   const next = {
     ...state,
-    coreAxisAnswers: { ...state.coreAxisAnswers, [payload.id]: payload.value },
+    coreAxisAnswers: { ...state.coreAxisAnswers, [payload.id]: clamp(payload.value) },
   };
   return withValidation(withDerivedPreview(next));
 }
@@ -161,7 +303,7 @@ function answerCoreAxis(state: ClassifierState, payload: { id: keyof CoreAxisAns
 function answerFlavorProfile(state: ClassifierState, payload: { id: keyof FlavorProfileAnswers; value: number }): ClassifierState {
   const next = {
     ...state,
-    flavorProfileAnswers: { ...state.flavorProfileAnswers, [payload.id]: payload.value },
+    flavorProfileAnswers: { ...state.flavorProfileAnswers, [payload.id]: clamp(payload.value) },
   };
   return withValidation(withDerivedPreview(next));
 }
@@ -169,7 +311,7 @@ function answerFlavorProfile(state: ClassifierState, payload: { id: keyof Flavor
 function answerProteinPreference(state: ClassifierState, payload: { id: keyof ProteinPreferenceAnswers; value: number }): ClassifierState {
   const next = {
     ...state,
-    proteinPreferenceAnswers: { ...state.proteinPreferenceAnswers, [payload.id]: payload.value },
+    proteinPreferenceAnswers: { ...state.proteinPreferenceAnswers, [payload.id]: clamp(payload.value) },
   };
   return withValidation(withDerivedPreview(next));
 }
@@ -177,7 +319,7 @@ function answerProteinPreference(state: ClassifierState, payload: { id: keyof Pr
 function answerNoodle(state: ClassifierState, payload: { id: keyof NoodleAnswers; value: number }): ClassifierState {
   const next = {
     ...state,
-    noodleAnswers: { ...state.noodleAnswers, [payload.id]: payload.value },
+    noodleAnswers: { ...state.noodleAnswers, [payload.id]: clamp(payload.value) },
   };
   return withValidation(withDerivedPreview(next));
 }
@@ -185,7 +327,7 @@ function answerNoodle(state: ClassifierState, payload: { id: keyof NoodleAnswers
 function answerTopping(state: ClassifierState, payload: { id: keyof ToppingAnswers; value: number }): ClassifierState {
   const next = {
     ...state,
-    toppingAnswers: { ...state.toppingAnswers, [payload.id]: payload.value },
+    toppingAnswers: { ...state.toppingAnswers, [payload.id]: clamp(payload.value) },
   };
   return withValidation(withDerivedPreview(next));
 }
@@ -193,7 +335,7 @@ function answerTopping(state: ClassifierState, payload: { id: keyof ToppingAnswe
 function answerAllergen(state: ClassifierState, payload: { id: keyof AllergenAnswers; value: boolean }): ClassifierState {
   const next = {
     ...state,
-    allergenAnswers: { ...state.allergenAnswers, [payload.id]: payload.value },
+    allergenAnswers: { ...state.allergenAnswers, [payload.id]: payload.value === true },
     allergenConfirmed: false,
   };
   return withValidation(next);
@@ -247,7 +389,7 @@ export function classifierReducer(state: ClassifierState, action: ClassifierActi
     case "RESET_FLOW":
       return createDefaultClassifierState();
     case "LOAD_SAVED_STATE":
-      return action.payload;
+      return sanitizePersistedState(action.payload);
     default:
       return state;
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useMemo, useReducer, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +39,17 @@ import type {
   FlowState,
   NoodleAnswers,
   ProteinPreferenceAnswers,
+  ResultSnapshot,
   SliderQuestionConfig,
   ToppingAnswers,
 } from "@/types/ramen";
+import {
+  createQuizRunId,
+  sendFeedback,
+  trackQuizResult,
+  trackQuizStarted,
+  trackQuestionAnswer,
+} from "@/lib/tracking";
 
 const FLOW_STEPS: Array<{ state: FlowState; label: string }> = [
   { state: "INTRO", label: "開始" },
@@ -519,10 +527,129 @@ function ResultSection({ state }: { state: ClassifierState }) {
   );
 }
 
+// ── Feedback UI ───────────────────────────────────────────────────────────────
+
+const RATING_LABELS: Record<number, string> = {
+  5: "非常準確",
+  4: "大致準確",
+  3: "普通",
+  2: "不太準",
+  1: "完全不準",
+};
+
+function FeedbackSection({
+  snapshot,
+  quizRunId,
+}: {
+  snapshot: ResultSnapshot;
+  quizRunId: string;
+}) {
+  const [rating, setRating] = useState<number | null>(null);
+  const [comment, setComment] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
+
+  const handleSubmit = async () => {
+    if (rating === null || submitting || submitted) return;
+    setSubmitting(true);
+    setSubmitError(false);
+    try {
+      await sendFeedback({
+        quizRunId,
+        typeCode: snapshot.archetype.code,
+        typeName: snapshot.archetype.name,
+        rating,
+        comment: comment.trim() || undefined,
+        axes: snapshot.archetype.axes,
+      });
+      setSubmitted(true);
+    } catch {
+      setSubmitError(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <Card className="border-ink-soft bg-paper">
+        <CardContent className="py-8 text-center">
+          <p className="text-sm leading-7 text-ink-soft">感謝回饋，我們會用於優化分類與推薦結果。</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-ink-soft bg-paper">
+      <CardHeader>
+        <CardTitle className="text-base text-ink">這個拉麵人格準嗎？</CardTitle>
+        <CardDescription className="text-ink-soft">
+          你的回饋會用於優化分類與推薦結果，不會收集個人身份資料。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          {[5, 4, 3, 2, 1].map((score) => (
+            <button
+              key={score}
+              type="button"
+              onClick={() => setRating(score)}
+              className={`flex flex-1 flex-col items-center justify-center border py-3 text-sm transition ${
+                rating === score
+                  ? "border-ink bg-ink text-white"
+                  : "border-ink-soft bg-paper text-ink-soft hover:border-ink hover:text-ink"
+              }`}
+            >
+              <span className="text-base font-medium leading-none">{score}</span>
+              <span className="mt-1 text-center text-[10px] leading-tight">{RATING_LABELS[score]}</span>
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="可以簡單說明哪裡準或不準，幫助我們改善推薦。"
+          className="w-full resize-none border border-ink-soft bg-paper p-3 text-sm leading-6 text-ink placeholder:text-ink-faint focus:border-ink focus:outline-none"
+          rows={3}
+        />
+
+        {submitError && (
+          <p className="text-sm text-amber-700">送出遇到問題，你的評分還在，可以稍後再試。</p>
+        )}
+
+        <Button
+          className="w-full"
+          disabled={rating === null || submitting}
+          onClick={() => {
+            void handleSubmit();
+          }}
+        >
+          {submitting ? "送出中…" : "送出回饋"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Main shell ────────────────────────────────────────────────────────────────
+
 const STORAGE_KEY = "ramen-classifier-state";
 
 export default function ClassifierShell() {
   const [state, dispatch] = useReducer(classifierReducer, undefined, createDefaultClassifierState);
+
+  // ── Tracking state ──────────────────────────────────────────────
+  // quizRunId is stored in state so it's readable in JSX deps; also mirrored in
+  // a ref so debounce callbacks always read the latest value without captures.
+  const [quizRunId, setQuizRunId] = useState<string>("");
+  const quizRunIdRef = useRef<string>("");
+  quizRunIdRef.current = quizRunId;
+  const trackDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const resultTrackedRunRef = useRef<string>("");
+
   const topAnchorRef = useRef<HTMLDivElement | null>(null);
   const previousFlowRef = useRef<FlowState>(state.currentState);
   const restoredRef = useRef(false);
@@ -568,6 +695,98 @@ export default function ClassifierShell() {
     previousFlowRef.current = current;
   }, [state.currentState]);
 
+  // ── Tracking helpers ────────────────────────────────────────────
+
+  // Debounced per-question answer tracker (fires 600 ms after last change).
+  const trackAnswer = useCallback(
+    (id: string, value: number, stage: string, questions: SliderQuestionConfig[]) => {
+      const existing = trackDebounceRef.current.get(id);
+      if (existing !== undefined) clearTimeout(existing);
+
+      const timer = setTimeout(() => {
+        if (!quizRunIdRef.current) return;
+        const question = questions.find((q) => q.id === id);
+        const idx = questions.findIndex((q) => q.id === id);
+        const direction: "left" | "right" | "neutral" =
+          value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
+
+        trackQuestionAnswer({
+          quizRunId: quizRunIdRef.current,
+          questionId: id,
+          questionStage: stage,
+          questionText: question?.title ?? id,
+          leftLabel: question?.leftLabel,
+          rightLabel: question?.rightLabel,
+          answerValue: value,
+          answerDirection: direction,
+          questionIndex: idx,
+        });
+
+        trackDebounceRef.current.delete(id);
+      }, 600);
+
+      trackDebounceRef.current.set(id, timer);
+    },
+    [],
+  );
+
+  // Clear pending debounce timers on unmount.
+  useEffect(() => {
+    const map = trackDebounceRef.current;
+    return () => {
+      map.forEach(clearTimeout);
+      map.clear();
+    };
+  }, []);
+
+  // Track quiz_result once per quiz run when the result page appears.
+  useEffect(() => {
+    if (
+      state.currentState !== "RESULT_VIEW" ||
+      !state.resultSnapshot ||
+      !quizRunId ||
+      resultTrackedRunRef.current === quizRunId
+    )
+      return;
+
+    resultTrackedRunRef.current = quizRunId;
+    const snapshot = state.resultSnapshot;
+
+    const answerCount = Object.values({
+      ...state.coreAxisAnswers,
+      ...state.flavorProfileAnswers,
+      ...state.proteinPreferenceAnswers,
+      ...state.noodleAnswers,
+      ...state.toppingAnswers,
+    }).filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length;
+
+    trackQuizResult({
+      quizRunId,
+      typeCode: snapshot.archetype.code,
+      typeName: snapshot.archetype.name,
+      axes: snapshot.archetype.axes,
+      topFlavorTags: snapshot.ingredientTags.slice(0, 5).map((t) => t.tag),
+      allergenWarnings: snapshot.warningByAllergen,
+      recommendationSummary: snapshot.archetype.summary,
+      answerCount,
+    });
+  }, [state, quizRunId]);
+
+  // Named handlers that also manage quizRunId and tracking events.
+  const handleStartFlow = useCallback(() => {
+    const newRunId = createQuizRunId();
+    setQuizRunId(newRunId);
+    dispatch({ type: "START_FLOW" });
+    trackQuizStarted(newRunId);
+  }, []);
+
+  const handleRestartFromResult = useCallback(() => {
+    const newRunId = createQuizRunId();
+    setQuizRunId(newRunId);
+    dispatch({ type: "RESTART_FROM_RESULT" });
+    trackQuizStarted(newRunId);
+  }, []);
+
   const introView = null;
 
   const body = useMemo(() => {
@@ -579,33 +798,30 @@ export default function ClassifierShell() {
         return renderQuestionList<CoreAxisAnswers>({
           questions: CORE_AXES_QUESTIONS,
           values: state.coreAxisAnswers,
-          onChange: (id, value) =>
-            dispatch({
-              type: "ANSWER_CORE_AXIS",
-              payload: { id: id as keyof CoreAxisAnswers, value },
-            }),
+          onChange: (id, value) => {
+            dispatch({ type: "ANSWER_CORE_AXIS", payload: { id: id as keyof CoreAxisAnswers, value } });
+            trackAnswer(id, value, "CORE_AXES", CORE_AXES_QUESTIONS);
+          },
         });
 
       case "FLAVOR_PROFILE":
         return renderQuestionList<FlavorProfileAnswers>({
           questions: FLAVOR_PROFILE_QUESTIONS,
           values: state.flavorProfileAnswers,
-          onChange: (id, value) =>
-            dispatch({
-              type: "ANSWER_FLAVOR_PROFILE",
-              payload: { id: id as keyof FlavorProfileAnswers, value },
-            }),
+          onChange: (id, value) => {
+            dispatch({ type: "ANSWER_FLAVOR_PROFILE", payload: { id: id as keyof FlavorProfileAnswers, value } });
+            trackAnswer(id, value, "FLAVOR_PROFILE", FLAVOR_PROFILE_QUESTIONS);
+          },
         });
 
       case "PROTEIN_PREFERENCES":
         return renderQuestionList<ProteinPreferenceAnswers>({
           questions: PROTEIN_PREFERENCE_QUESTIONS,
           values: state.proteinPreferenceAnswers,
-          onChange: (id, value) =>
-            dispatch({
-              type: "ANSWER_PROTEIN_PREFERENCE",
-              payload: { id: id as keyof ProteinPreferenceAnswers, value },
-            }),
+          onChange: (id, value) => {
+            dispatch({ type: "ANSWER_PROTEIN_PREFERENCE", payload: { id: id as keyof ProteinPreferenceAnswers, value } });
+            trackAnswer(id, value, "PROTEIN_PREFERENCES", PROTEIN_PREFERENCE_QUESTIONS);
+          },
         });
 
       case "NOODLE_TOPPING":
@@ -615,11 +831,10 @@ export default function ClassifierShell() {
 {renderQuestionList<NoodleAnswers>({
                 questions: NOODLE_QUESTIONS,
                 values: state.noodleAnswers,
-                onChange: (id, value) =>
-                  dispatch({
-                    type: "ANSWER_NOODLE",
-                    payload: { id: id as keyof NoodleAnswers, value },
-                  }),
+                onChange: (id, value) => {
+                  dispatch({ type: "ANSWER_NOODLE", payload: { id: id as keyof NoodleAnswers, value } });
+                  trackAnswer(id, value, "NOODLE_TOPPING", NOODLE_QUESTIONS);
+                },
               })}
             </div>
 
@@ -631,11 +846,10 @@ export default function ClassifierShell() {
               {renderQuestionList<ToppingAnswers>({
                 questions: TOPPING_QUESTIONS,
                 values: state.toppingAnswers,
-                onChange: (id, value) =>
-                  dispatch({
-                    type: "ANSWER_TOPPING",
-                    payload: { id: id as keyof ToppingAnswers, value },
-                  }),
+                onChange: (id, value) => {
+                  dispatch({ type: "ANSWER_TOPPING", payload: { id: id as keyof ToppingAnswers, value } });
+                  trackAnswer(id, value, "NOODLE_TOPPING", TOPPING_QUESTIONS);
+                },
               })}
             </div>
           </div>
@@ -656,12 +870,23 @@ export default function ClassifierShell() {
                       type="checkbox"
                       className="mt-1 h-5 w-5"
                       checked={Boolean(state.allergenAnswers[option.id])}
-                      onChange={(e) =>
+                      onChange={(e) => {
                         dispatch({
                           type: "ANSWER_ALLERGEN",
                           payload: { id: option.id as keyof AllergenAnswers, value: e.target.checked },
-                        })
-                      }
+                        });
+                        if (quizRunIdRef.current) {
+                          trackQuestionAnswer({
+                            quizRunId: quizRunIdRef.current,
+                            questionId: option.id,
+                            questionStage: "ALLERGENS",
+                            questionText: option.label,
+                            answerValue: e.target.checked,
+                            answerLabel: e.target.checked ? "需要避開" : "不需要避開",
+                            questionIndex: ALLERGEN_OPTIONS.findIndex((o) => o.id === option.id),
+                          });
+                        }
+                      }}
                     />
                     <span>
                       <span className="font-medium text-ink">{option.label}</span>
@@ -683,12 +908,23 @@ export default function ClassifierShell() {
         );
 
       case "RESULT_VIEW":
-        return <ResultSection state={state} />;
+        return (
+          <div className="space-y-4">
+            <ResultSection state={state} />
+            {state.resultSnapshot !== null && quizRunId !== "" && (
+              <FeedbackSection
+                key={quizRunId}
+                snapshot={state.resultSnapshot}
+                quizRunId={quizRunId}
+              />
+            )}
+          </div>
+        );
 
       default:
         return null;
     }
-  }, [state]);
+  }, [state, quizRunId, trackAnswer]);
 
   return (
     <>
@@ -751,14 +987,20 @@ export default function ClassifierShell() {
             {state.currentState !== "RESULT_VIEW" ? (
               <Button
                 className="min-h-12 flex-1 px-5"
-                onClick={() => dispatch(state.currentState === "INTRO" ? { type: "START_FLOW" } : { type: "NEXT_STEP" })}
+                onClick={() => {
+                  if (state.currentState === "INTRO") {
+                    handleStartFlow();
+                  } else {
+                    dispatch({ type: "NEXT_STEP" });
+                  }
+                }}
                 disabled={!canGoNext(state)}
               >
                 {nextLabel(state.currentState)}
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
             ) : (
-              <Button className="min-h-12 flex-1 px-5" onClick={() => dispatch({ type: "RESTART_FROM_RESULT" })}>
+              <Button className="min-h-12 flex-1 px-5" onClick={handleRestartFromResult}>
                 重新分類
               </Button>
             )}

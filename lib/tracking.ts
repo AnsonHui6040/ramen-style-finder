@@ -92,6 +92,10 @@ export interface QuestionAnswerData {
   answerLabel?: string;
   answerDirection?: "left" | "right" | "neutral";
   questionIndex: number;
+  /** True when this event is part of the final answer snapshot taken just before
+   *  quiz_result is sent. Lets downstream analysis distinguish "user dragged
+   *  slider at this moment" from "this was the question's final state". */
+  isFinalSnapshot?: boolean;
 }
 
 /** Tracks a single question answer. Fire-and-forget. */

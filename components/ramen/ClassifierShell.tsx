@@ -775,6 +775,9 @@ export default function ClassifierShell() {
   }, []);
 
   // Track quiz_result once per quiz run when the result page appears.
+  // Before sending quiz_result, a "final answer snapshot" is sent for every
+  // question so DynamoDB always has a complete record of the final state —
+  // even for questions the user never manually changed from their default.
   useEffect(() => {
     if (
       state.currentState !== "RESULT_VIEW" ||
@@ -785,6 +788,68 @@ export default function ClassifierShell() {
       return;
 
     resultTrackedRunRef.current = quizRunId;
+    const runId = quizRunId;
+
+    // ── 1. Final answer snapshot ──────────────────────────────────
+    // Sends one question_answer event per question with isFinalSnapshot:true.
+    // Key format: `${runId}:${questionId}:final` — kept in sentAnswerKeysRef
+    // alongside the live-event keys so the set can be inspected uniformly.
+
+    const sendSliderSnapshot = (
+      questions: SliderQuestionConfig[],
+      values: Record<string, number | undefined>,
+      stage: string,
+    ) => {
+      questions.forEach((q, idx) => {
+        const snapshotKey = `${runId}:${q.id}:final`;
+        if (sentAnswerKeysRef.current.has(snapshotKey)) return;
+        sentAnswerKeysRef.current.add(snapshotKey);
+
+        const value = values[q.id] ?? q.defaultValue ?? 50;
+        const direction: "left" | "right" | "neutral" =
+          value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
+
+        trackQuestionAnswer({
+          quizRunId: runId,
+          questionId: q.id,
+          questionStage: stage,
+          questionText: q.title,
+          leftLabel: q.leftLabel,
+          rightLabel: q.rightLabel,
+          answerValue: value,
+          answerDirection: direction,
+          questionIndex: idx,
+          isFinalSnapshot: true,
+        });
+      });
+    };
+
+    sendSliderSnapshot(CORE_AXES_QUESTIONS, state.coreAxisAnswers, "CORE_AXES");
+    sendSliderSnapshot(FLAVOR_PROFILE_QUESTIONS, state.flavorProfileAnswers, "FLAVOR_PROFILE");
+    sendSliderSnapshot(PROTEIN_PREFERENCE_QUESTIONS, state.proteinPreferenceAnswers, "PROTEIN_PREFERENCES");
+    sendSliderSnapshot(NOODLE_QUESTIONS, state.noodleAnswers, "NOODLE_TOPPING");
+    sendSliderSnapshot(TOPPING_QUESTIONS, state.toppingAnswers, "NOODLE_TOPPING");
+
+    // Allergens are boolean — tracked separately.
+    ALLERGEN_OPTIONS.forEach((option, idx) => {
+      const snapshotKey = `${runId}:${option.id}:final`;
+      if (sentAnswerKeysRef.current.has(snapshotKey)) return;
+      sentAnswerKeysRef.current.add(snapshotKey);
+
+      const checked = Boolean(state.allergenAnswers[option.id]);
+      trackQuestionAnswer({
+        quizRunId: runId,
+        questionId: option.id,
+        questionStage: "ALLERGENS",
+        questionText: option.label,
+        answerValue: checked,
+        answerLabel: checked ? "需要避開" : "不需要避開",
+        questionIndex: idx,
+        isFinalSnapshot: true,
+      });
+    });
+
+    // ── 2. quiz_result ────────────────────────────────────────────
     const snapshot = state.resultSnapshot;
 
     const answerCount = Object.values({

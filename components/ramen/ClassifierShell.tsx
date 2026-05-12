@@ -647,7 +647,12 @@ export default function ClassifierShell() {
   const [quizRunId, setQuizRunId] = useState<string>("");
   const quizRunIdRef = useRef<string>("");
   quizRunIdRef.current = quizRunId;
+  // Pending debounce timers (questionId → timer handle).
   const trackDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Latest slider value per question — so flush can read the final value even if debounce is pending.
+  const latestAnswerDataRef = useRef<Map<string, { value: number; stage: string; questions: SliderQuestionConfig[] }>>(new Map());
+  // Dedup keys: `${quizRunId}:${questionId}:${value}` — prevents double-send when both debounce and flush fire.
+  const sentAnswerKeysRef = useRef<Set<string>>(new Set());
   const resultTrackedRunRef = useRef<string>("");
 
   const topAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -697,38 +702,68 @@ export default function ClassifierShell() {
 
   // ── Tracking helpers ────────────────────────────────────────────
 
-  // Debounced per-question answer tracker (fires 600 ms after last change).
+  // Sends a question_answer event only if this exact (runId, questionId, value) hasn't been sent yet.
+  // Uses refs only → stable reference, no deps.
+  const sendAnswerIfNew = useCallback(
+    (id: string, value: number, stage: string, questions: SliderQuestionConfig[]) => {
+      const runId = quizRunIdRef.current;
+      if (!runId) return;
+      const key = `${runId}:${id}:${value}`;
+      if (sentAnswerKeysRef.current.has(key)) return;
+      sentAnswerKeysRef.current.add(key);
+
+      const question = questions.find((q) => q.id === id);
+      const idx = questions.findIndex((q) => q.id === id);
+      const direction: "left" | "right" | "neutral" =
+        value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
+
+      trackQuestionAnswer({
+        quizRunId: runId,
+        questionId: id,
+        questionStage: stage,
+        questionText: question?.title ?? id,
+        leftLabel: question?.leftLabel,
+        rightLabel: question?.rightLabel,
+        answerValue: value,
+        answerDirection: direction,
+        questionIndex: idx,
+      });
+    },
+    [],
+  );
+
+  // Debounced per-question answer tracker.
+  // Also stores the latest value in latestAnswerDataRef so flushPendingAnswers can read it.
   const trackAnswer = useCallback(
     (id: string, value: number, stage: string, questions: SliderQuestionConfig[]) => {
+      // Always update latest value (used by flush on next-step).
+      latestAnswerDataRef.current.set(id, { value, stage, questions });
+
+      // Reset debounce.
       const existing = trackDebounceRef.current.get(id);
       if (existing !== undefined) clearTimeout(existing);
 
       const timer = setTimeout(() => {
-        if (!quizRunIdRef.current) return;
-        const question = questions.find((q) => q.id === id);
-        const idx = questions.findIndex((q) => q.id === id);
-        const direction: "left" | "right" | "neutral" =
-          value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
-
-        trackQuestionAnswer({
-          quizRunId: quizRunIdRef.current,
-          questionId: id,
-          questionStage: stage,
-          questionText: question?.title ?? id,
-          leftLabel: question?.leftLabel,
-          rightLabel: question?.rightLabel,
-          answerValue: value,
-          answerDirection: direction,
-          questionIndex: idx,
-        });
-
+        const latest = latestAnswerDataRef.current.get(id);
+        if (latest) sendAnswerIfNew(id, latest.value, latest.stage, latest.questions);
         trackDebounceRef.current.delete(id);
       }, 600);
 
       trackDebounceRef.current.set(id, timer);
     },
-    [],
+    [sendAnswerIfNew],
   );
+
+  // Flushes all pending (debounced) answers immediately.
+  // Call this before dispatching NEXT_STEP so no answer is lost.
+  const flushPendingAnswers = useCallback(() => {
+    trackDebounceRef.current.forEach((timer, id) => {
+      clearTimeout(timer);
+      const data = latestAnswerDataRef.current.get(id);
+      if (data) sendAnswerIfNew(id, data.value, data.stage, data.questions);
+    });
+    trackDebounceRef.current.clear();
+  }, [sendAnswerIfNew]);
 
   // Clear pending debounce timers on unmount.
   useEffect(() => {
@@ -762,12 +797,12 @@ export default function ClassifierShell() {
 
     trackQuizResult({
       quizRunId,
-      typeCode: snapshot.archetype.code,
-      typeName: snapshot.archetype.name,
-      axes: snapshot.archetype.axes,
-      topFlavorTags: snapshot.ingredientTags.slice(0, 5).map((t) => t.tag),
-      allergenWarnings: snapshot.warningByAllergen,
-      recommendationSummary: snapshot.archetype.summary,
+      typeCode: snapshot.archetype?.code ?? "",
+      typeName: snapshot.archetype?.name ?? "",
+      axes: snapshot.archetype?.axes ?? { richnessAxis: 0, brothBodyAxis: 0, impactAxis: 0, noodleBodyAxis: 0 },
+      topFlavorTags: snapshot.ingredientTags?.slice(0, 5).map((t) => t.tag) ?? [],
+      allergenWarnings: snapshot.warningByAllergen ?? [],
+      recommendationSummary: snapshot.archetype?.summary ?? "",
       answerCount,
     });
   }, [state, quizRunId]);
@@ -924,7 +959,7 @@ export default function ClassifierShell() {
       default:
         return null;
     }
-  }, [state, quizRunId, trackAnswer]);
+  }, [state, quizRunId, trackAnswer, flushPendingAnswers]);
 
   return (
     <>
@@ -991,6 +1026,8 @@ export default function ClassifierShell() {
                   if (state.currentState === "INTRO") {
                     handleStartFlow();
                   } else {
+                    // Flush any pending debounced answers before advancing to next stage.
+                    flushPendingAnswers();
                     dispatch({ type: "NEXT_STEP" });
                   }
                 }}

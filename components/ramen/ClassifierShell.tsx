@@ -719,7 +719,7 @@ export default function ClassifierShell() {
       const direction: "left" | "right" | "neutral" =
         value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
 
-      trackQuestionAnswer({
+      void trackQuestionAnswer({
         quizRunId: runId,
         questionId: id,
         questionStage: stage,
@@ -812,7 +812,7 @@ export default function ClassifierShell() {
 
           const value = values[q.id] ?? q.defaultValue ?? 50;
           const direction: "left" | "right" | "neutral" =
-            value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
+            value < 50 ? "left" : value > 50 ? "right" : "neutral";
 
           snapshotEvents.push({
             quizRunId: runId,
@@ -840,21 +840,21 @@ export default function ClassifierShell() {
         if (sentAnswerKeysRef.current.has(snapshotKey)) return;
         sentAnswerKeysRef.current.add(snapshotKey);
 
-        const checked = Boolean(state.allergenAnswers[option.id]);
+        const checked = state.allergenAnswers[option.id];
         snapshotEvents.push({
           quizRunId: runId,
           questionId: option.id,
           questionStage: "ALLERGENS",
           questionText: option.label,
-          answerValue: checked,
-          answerLabel: checked ? "需要避開" : "不需要避開",
+          answerValue: checked ? 1 : 0,
+          answerDirection: checked ? "selected" : "not_selected",
           questionIndex: idx,
           isFinalSnapshot: true,
         });
       });
 
       // ── 3. Send all final snapshots and await completion ────────
-      console.info("[tracking] sending final snapshot", snapshotEvents.length);
+      console.info("[tracking] final snapshot prepared", snapshotEvents.length);
 
       const answeredAt = new Date().toISOString();
       await Promise.allSettled(
@@ -866,7 +866,7 @@ export default function ClassifierShell() {
         ),
       );
 
-      console.info("[tracking] final snapshot sent");
+      console.info("[tracking] final snapshot sent", snapshotEvents.length);
 
       // ── 4. quiz_result ────────────────────────────────────────
       const answerCount = Object.values({

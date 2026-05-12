@@ -90,7 +90,7 @@ export interface QuestionAnswerData {
   rightLabel?: string;
   answerValue: number | boolean;
   answerLabel?: string;
-  answerDirection?: "left" | "right" | "neutral";
+  answerDirection?: "left" | "right" | "neutral" | "selected" | "not_selected";
   questionIndex: number;
   /** True when this event is part of the final answer snapshot taken just before
    *  quiz_result is sent. Lets downstream analysis distinguish "user dragged
@@ -98,9 +98,10 @@ export interface QuestionAnswerData {
   isFinalSnapshot?: boolean;
 }
 
-/** Tracks a single question answer. Fire-and-forget. */
-export function trackQuestionAnswer(data: QuestionAnswerData): void {
-  void trackEvent("question_answer", {
+/** Tracks a single question answer. Returns a Promise so callers can await all
+ *  snapshot events before sending quiz_result (via Promise.allSettled). */
+export function trackQuestionAnswer(data: QuestionAnswerData): Promise<void> {
+  return trackEvent("question_answer", {
     ...data,
     answeredAt: new Date().toISOString(),
   });

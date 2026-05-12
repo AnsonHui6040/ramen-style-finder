@@ -8,29 +8,26 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Build the app.
+# Build the app (static export → outputs to /app/out).
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run typecheck && npm run build
+RUN npx tsc --noEmit && npm run build
 
-# Production image.
-FROM base AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=80
-ENV HOSTNAME=0.0.0.0
+# Production image — serve the static export with nginx.
+FROM nginx:alpine AS runner
+COPY --from=builder /app/out /usr/share/nginx/html
 
-RUN groupadd --system --gid 1001 nodejs \
-  && useradd --system --uid 1001 --gid nodejs nextjs
-
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+# nginx default config serves index.html and handles 404 → index.html fallback.
+RUN printf 'server {\n\
+    listen 80;\n\
+    root /usr/share/nginx/html;\n\
+    index index.html;\n\
+    location / {\n\
+        try_files $uri $uri/ $uri.html /index.html;\n\
+    }\n\
+}\n' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
-CMD ["node", "server.js"]
+CMD ["nginx", "-g", "daemon off;"]

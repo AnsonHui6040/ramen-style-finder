@@ -27,8 +27,8 @@ const repoName = "ramen-style-finder";
 
 const nextConfig = {
   reactStrictMode: true,
-  output: "export",
-  trailingSlash: true,
+  output: isGitHubPages ? "export" : "standalone",
+  trailingSlash: isGitHubPages,
   images: { unoptimized: true },
   basePath: isGitHubPages ? `/${repoName}` : "",
   assetPrefix: isGitHubPages ? `/${repoName}/` : "",

@@ -46,7 +46,6 @@ import type {
 import {
   createQuizRunId,
   sendFeedback,
-  trackEvent,
   trackQuizResult,
   trackQuizStarted,
   trackQuestionAnswer,
@@ -798,6 +797,7 @@ export default function ClassifierShell() {
       flushPendingAnswers();
 
       // ── 2. Build the complete final-state snapshot payload list ─
+      //      Always rebuild from scratch — no dedup guard here.
       const snapshotEvents: QuestionAnswerData[] = [];
 
       const addSliderSnapshot = (
@@ -806,10 +806,6 @@ export default function ClassifierShell() {
         stage: string,
       ) => {
         questions.forEach((q, idx) => {
-          const snapshotKey = `${runId}:${q.id}:final`;
-          if (sentAnswerKeysRef.current.has(snapshotKey)) return;
-          sentAnswerKeysRef.current.add(snapshotKey);
-
           const value = values[q.id] ?? q.defaultValue ?? 50;
           const direction: "left" | "right" | "neutral" =
             value < 50 ? "left" : value > 50 ? "right" : "neutral";
@@ -835,12 +831,9 @@ export default function ClassifierShell() {
       addSliderSnapshot(NOODLE_QUESTIONS, state.noodleAnswers, "NOODLE_TOPPING");
       addSliderSnapshot(TOPPING_QUESTIONS, state.toppingAnswers, "NOODLE_TOPPING");
 
+      // ALLERGENS — always 6 entries
       ALLERGEN_OPTIONS.forEach((option, idx) => {
-        const snapshotKey = `${runId}:${option.id}:final`;
-        if (sentAnswerKeysRef.current.has(snapshotKey)) return;
-        sentAnswerKeysRef.current.add(snapshotKey);
-
-        const checked = state.allergenAnswers[option.id];
+        const checked = Boolean(state.allergenAnswers[option.id]);
         snapshotEvents.push({
           quizRunId: runId,
           questionId: option.id,
@@ -853,22 +846,47 @@ export default function ClassifierShell() {
         });
       });
 
-      // ── 3. Send all final snapshots and await completion ────────
-      console.info("[tracking] final snapshot prepared", snapshotEvents.length);
-
-      const answeredAt = new Date().toISOString();
-      await Promise.allSettled(
-        snapshotEvents.map((data) =>
-          trackEvent("question_answer", {
-            ...data,
-            answeredAt,
-          }),
-        ),
+      // ── 3. Validate snapshot count ──────────────────────────────
+      console.info(
+        "[tracking] final snapshot prepared",
+        snapshotEvents.length,
+        snapshotEvents.map((e) => e.questionId),
       );
 
-      console.info("[tracking] final snapshot sent", snapshotEvents.length);
+      if (snapshotEvents.length !== 39) {
+        const allIds = [
+          ...CORE_AXES_QUESTIONS.map((q) => q.id),
+          ...FLAVOR_PROFILE_QUESTIONS.map((q) => q.id),
+          ...PROTEIN_PREFERENCE_QUESTIONS.map((q) => q.id),
+          ...NOODLE_QUESTIONS.map((q) => q.id),
+          ...TOPPING_QUESTIONS.map((q) => q.id),
+          ...ALLERGEN_OPTIONS.map((o) => o.id),
+        ];
+        const sentIds = new Set(snapshotEvents.map((e) => e.questionId));
+        const missing = allIds.filter((id) => !sentIds.has(id));
+        console.warn(
+          "[tracking] final snapshot count mismatch, expected 39 got",
+          snapshotEvents.length,
+          "missing:",
+          missing,
+        );
+      }
 
-      // ── 4. quiz_result ────────────────────────────────────────
+      // ── 4. Send snapshots one by one with 50 ms gap ────────────
+      let sentCount = 0;
+      for (const event of snapshotEvents) {
+        try {
+          await trackQuestionAnswer(event);
+          sentCount++;
+        } catch (err) {
+          console.warn("[tracking] failed to send snapshot for", event.questionId, err);
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+
+      console.info("[tracking] final snapshot sent", sentCount);
+
+      // ── 5. quiz_result — only after all snapshots are done ─────
       const answerCount = Object.values({
         ...state.coreAxisAnswers,
         ...state.flavorProfileAnswers,

@@ -1,3 +1,7 @@
+"use client";
+
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,10 +34,10 @@ function familyDescription(family: TypeFamily): string {
   }
 }
 
-export default async function TypesPage({ searchParams }: TypesPageProps) {
-  const resolved = (await searchParams) ?? {};
-  const family = resolved.family;
-  const featured = resolved.featured === "1";
+function TypesContent() {
+  const searchParams = useSearchParams();
+  const family = searchParams.get("family") ?? undefined;
+  const featured = searchParams.get("featured") === "1";
 
   const familyIsValid = TYPE_FAMILY_OPTIONS.includes(family as TypeFamily);
   const activeFamily = familyIsValid ? (family as TypeFamily) : null;
@@ -146,5 +150,14 @@ export default async function TypesPage({ searchParams }: TypesPageProps) {
         </div>
       </section>
     </main>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary for static export.
+export default function TypesPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 pt-8 text-ink-faint">載入中…</div>}>
+      <TypesContent />
+    </Suspense>
   );
 }

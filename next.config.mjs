@@ -22,18 +22,18 @@ const securityHeaders = [
   },
 ];
 
+const isGitHubPages = process.env.GITHUB_PAGES === "true";
+const repoName = "ramen-style-finder";
+
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone",
+  output: "export",
+  trailingSlash: true,
+  images: { unoptimized: true },
+  basePath: isGitHubPages ? `/${repoName}` : "",
+  assetPrefix: isGitHubPages ? `/${repoName}/` : "",
   poweredByHeader: false,
-  async headers() {
-    return [
-      {
-        source: "/(.*)",
-        headers: securityHeaders,
-      },
-    ];
-  },
 };
 
 export default nextConfig;
+

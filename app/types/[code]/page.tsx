@@ -16,6 +16,17 @@ interface TypeDetailPageProps {
   params: Promise<{ code: string }>;
 }
 
+// Required for Next.js static export: pre-render all 16 type pages at build time.
+export function generateStaticParams() {
+  const TYPE_CODES: TypeCode[] = [
+    "CKLF", "CKLT", "CKHF", "CKHT",
+    "CWLF", "CWLT", "CWHF", "CWHT",
+    "RKLF", "RKLT", "RKHF", "RKHT",
+    "RWLF", "RWLT", "RWHF", "RWHT",
+  ];
+  return TYPE_CODES.map((code) => ({ code }));
+}
+
 function axisChip(label: string) {
   return (
     <span className="border border-ink-soft bg-paper-deep px-2.5 py-1 font-code text-xs font-medium text-ink-soft">

@@ -46,9 +46,11 @@ import type {
 import {
   createQuizRunId,
   sendFeedback,
+  trackEvent,
   trackQuizResult,
   trackQuizStarted,
   trackQuestionAnswer,
+  type QuestionAnswerData,
 } from "@/lib/tracking";
 
 const FLOW_STEPS: Array<{ state: FlowState; label: string }> = [
@@ -789,88 +791,104 @@ export default function ClassifierShell() {
 
     resultTrackedRunRef.current = quizRunId;
     const runId = quizRunId;
+    const snapshot = state.resultSnapshot;
 
-    // ── 1. Final answer snapshot ──────────────────────────────────
-    // Sends one question_answer event per question with isFinalSnapshot:true.
-    // Key format: `${runId}:${questionId}:final` — kept in sentAnswerKeysRef
-    // alongside the live-event keys so the set can be inspected uniformly.
+    void (async () => {
+      // ── 1. Flush any pending debounced slider answers ──────────
+      flushPendingAnswers();
 
-    const sendSliderSnapshot = (
-      questions: SliderQuestionConfig[],
-      values: Record<string, number | undefined>,
-      stage: string,
-    ) => {
-      questions.forEach((q, idx) => {
-        const snapshotKey = `${runId}:${q.id}:final`;
+      // ── 2. Build the complete final-state snapshot payload list ─
+      const snapshotEvents: QuestionAnswerData[] = [];
+
+      const addSliderSnapshot = (
+        questions: SliderQuestionConfig[],
+        values: Record<string, number | undefined>,
+        stage: string,
+      ) => {
+        questions.forEach((q, idx) => {
+          const snapshotKey = `${runId}:${q.id}:final`;
+          if (sentAnswerKeysRef.current.has(snapshotKey)) return;
+          sentAnswerKeysRef.current.add(snapshotKey);
+
+          const value = values[q.id] ?? q.defaultValue ?? 50;
+          const direction: "left" | "right" | "neutral" =
+            value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
+
+          snapshotEvents.push({
+            quizRunId: runId,
+            questionId: q.id,
+            questionStage: stage,
+            questionText: q.title,
+            leftLabel: q.leftLabel,
+            rightLabel: q.rightLabel,
+            answerValue: value,
+            answerDirection: direction,
+            questionIndex: idx,
+            isFinalSnapshot: true,
+          });
+        });
+      };
+
+      addSliderSnapshot(CORE_AXES_QUESTIONS, state.coreAxisAnswers, "CORE_AXES");
+      addSliderSnapshot(FLAVOR_PROFILE_QUESTIONS, state.flavorProfileAnswers, "FLAVOR_PROFILE");
+      addSliderSnapshot(PROTEIN_PREFERENCE_QUESTIONS, state.proteinPreferenceAnswers, "PROTEIN_PREFERENCES");
+      addSliderSnapshot(NOODLE_QUESTIONS, state.noodleAnswers, "NOODLE_TOPPING");
+      addSliderSnapshot(TOPPING_QUESTIONS, state.toppingAnswers, "NOODLE_TOPPING");
+
+      ALLERGEN_OPTIONS.forEach((option, idx) => {
+        const snapshotKey = `${runId}:${option.id}:final`;
         if (sentAnswerKeysRef.current.has(snapshotKey)) return;
         sentAnswerKeysRef.current.add(snapshotKey);
 
-        const value = values[q.id] ?? q.defaultValue ?? 50;
-        const direction: "left" | "right" | "neutral" =
-          value <= 35 ? "left" : value >= 65 ? "right" : "neutral";
-
-        trackQuestionAnswer({
+        const checked = Boolean(state.allergenAnswers[option.id]);
+        snapshotEvents.push({
           quizRunId: runId,
-          questionId: q.id,
-          questionStage: stage,
-          questionText: q.title,
-          leftLabel: q.leftLabel,
-          rightLabel: q.rightLabel,
-          answerValue: value,
-          answerDirection: direction,
+          questionId: option.id,
+          questionStage: "ALLERGENS",
+          questionText: option.label,
+          answerValue: checked,
+          answerLabel: checked ? "需要避開" : "不需要避開",
           questionIndex: idx,
           isFinalSnapshot: true,
         });
       });
-    };
 
-    sendSliderSnapshot(CORE_AXES_QUESTIONS, state.coreAxisAnswers, "CORE_AXES");
-    sendSliderSnapshot(FLAVOR_PROFILE_QUESTIONS, state.flavorProfileAnswers, "FLAVOR_PROFILE");
-    sendSliderSnapshot(PROTEIN_PREFERENCE_QUESTIONS, state.proteinPreferenceAnswers, "PROTEIN_PREFERENCES");
-    sendSliderSnapshot(NOODLE_QUESTIONS, state.noodleAnswers, "NOODLE_TOPPING");
-    sendSliderSnapshot(TOPPING_QUESTIONS, state.toppingAnswers, "NOODLE_TOPPING");
+      // ── 3. Send all final snapshots and await completion ────────
+      console.info("[tracking] sending final snapshot", snapshotEvents.length);
 
-    // Allergens are boolean — tracked separately.
-    ALLERGEN_OPTIONS.forEach((option, idx) => {
-      const snapshotKey = `${runId}:${option.id}:final`;
-      if (sentAnswerKeysRef.current.has(snapshotKey)) return;
-      sentAnswerKeysRef.current.add(snapshotKey);
+      const answeredAt = new Date().toISOString();
+      await Promise.allSettled(
+        snapshotEvents.map((data) =>
+          trackEvent("question_answer", {
+            ...data,
+            answeredAt,
+          }),
+        ),
+      );
 
-      const checked = Boolean(state.allergenAnswers[option.id]);
-      trackQuestionAnswer({
+      console.info("[tracking] final snapshot sent");
+
+      // ── 4. quiz_result ────────────────────────────────────────
+      const answerCount = Object.values({
+        ...state.coreAxisAnswers,
+        ...state.flavorProfileAnswers,
+        ...state.proteinPreferenceAnswers,
+        ...state.noodleAnswers,
+        ...state.toppingAnswers,
+      }).filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length;
+
+      trackQuizResult({
         quizRunId: runId,
-        questionId: option.id,
-        questionStage: "ALLERGENS",
-        questionText: option.label,
-        answerValue: checked,
-        answerLabel: checked ? "需要避開" : "不需要避開",
-        questionIndex: idx,
-        isFinalSnapshot: true,
+        typeCode: snapshot.archetype?.code ?? "",
+        typeName: snapshot.archetype?.name ?? "",
+        axes: snapshot.archetype?.axes ?? { richnessAxis: 0, brothBodyAxis: 0, impactAxis: 0, noodleBodyAxis: 0 },
+        topFlavorTags: snapshot.ingredientTags?.slice(0, 5).map((t) => t.tag) ?? [],
+        allergenWarnings: snapshot.warningByAllergen ?? [],
+        recommendationSummary: snapshot.archetype?.summary ?? "",
+        answerCount,
       });
-    });
-
-    // ── 2. quiz_result ────────────────────────────────────────────
-    const snapshot = state.resultSnapshot;
-
-    const answerCount = Object.values({
-      ...state.coreAxisAnswers,
-      ...state.flavorProfileAnswers,
-      ...state.proteinPreferenceAnswers,
-      ...state.noodleAnswers,
-      ...state.toppingAnswers,
-    }).filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length;
-
-    trackQuizResult({
-      quizRunId,
-      typeCode: snapshot.archetype?.code ?? "",
-      typeName: snapshot.archetype?.name ?? "",
-      axes: snapshot.archetype?.axes ?? { richnessAxis: 0, brothBodyAxis: 0, impactAxis: 0, noodleBodyAxis: 0 },
-      topFlavorTags: snapshot.ingredientTags?.slice(0, 5).map((t) => t.tag) ?? [],
-      allergenWarnings: snapshot.warningByAllergen ?? [],
-      recommendationSummary: snapshot.archetype?.summary ?? "",
-      answerCount,
-    });
-  }, [state, quizRunId]);
+    })();
+  }, [state, quizRunId, flushPendingAnswers]);
 
   // Named handlers that also manage quizRunId and tracking events.
   const handleStartFlow = useCallback(() => {

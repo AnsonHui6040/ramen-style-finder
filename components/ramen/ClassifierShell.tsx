@@ -904,6 +904,20 @@ export default function ClassifierShell() {
         allergenWarnings: snapshot.warningByAllergen ?? [],
         recommendationSummary: snapshot.archetype?.summary ?? "",
         answerCount,
+        archetypeCode: snapshot.archetype?.code ?? "",
+        archetypeName: snapshot.archetype?.name ?? "",
+        mainCategory: snapshot.mainCategory,
+        subCategory: snapshot.subCategory,
+        topShare: snapshot.topResult.share,
+        secondShare: snapshot.secondaryResults[0]?.share ?? 0,
+        borderlineCode: snapshot.borderlineHint?.code ?? "",
+        borderlineName: snapshot.borderlineHint?.name ?? "",
+        borderlineDistance: snapshot.borderlineHint?.distance,
+        borderlineStrength: snapshot.borderlineHint?.strength,
+        reasonTop4: snapshot.reasons.slice(0, 4).map((reason) => ({
+          label: reason.label,
+          score: reason.score,
+        })),
       });
     })();
   }, [state, quizRunId, flushPendingAnswers]);

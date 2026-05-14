@@ -13,6 +13,9 @@
 
 const SOURCE = "ramen-style-finder";
 const APP_VERSION = "1.0.0";
+const SCHEMA_VERSION = "2026-05-15";
+const QUESTIONNAIRE_VERSION = "v1";
+const RESULT_VERSION = "v1";
 
 function getApiUrl(): string | null {
   const url = process.env.NEXT_PUBLIC_COLLECT_API_URL;
@@ -57,6 +60,9 @@ export async function trackEvent(
     createdAt: new Date().toISOString(),
     source: SOURCE,
     appVersion: APP_VERSION,
+    schemaVersion: SCHEMA_VERSION,
+    questionnaireVersion: QUESTIONNAIRE_VERSION,
+    resultVersion: RESULT_VERSION,
     page: typeof window !== "undefined" ? window.location.pathname : "/",
     payload,
   });
@@ -121,11 +127,29 @@ export interface QuizResultData {
   allergenWarnings: string[];
   recommendationSummary: string;
   answerCount: number;
+  schemaVersion?: string;
+  questionnaireVersion?: string;
+  resultVersion?: string;
+  archetypeCode?: string;
+  archetypeName?: string;
+  mainCategory?: string;
+  subCategory?: string;
+  topShare?: number;
+  secondShare?: number;
+  borderlineCode?: string;
+  borderlineName?: string;
+  borderlineDistance?: number;
+  borderlineStrength?: string;
+  confidenceScore?: number;
+  reasonTop4?: Array<{ label: string; score: number }>;
 }
 
 /** Tracks the generated quiz result. Fire-and-forget. */
 export function trackQuizResult(data: QuizResultData): void {
   void trackEvent("quiz_result", {
+    schemaVersion: SCHEMA_VERSION,
+    questionnaireVersion: QUESTIONNAIRE_VERSION,
+    resultVersion: RESULT_VERSION,
     ...data,
     resultGeneratedAt: new Date().toISOString(),
   });
@@ -162,6 +186,9 @@ export async function sendFeedback(data: FeedbackData): Promise<void> {
     createdAt: new Date().toISOString(),
     source: SOURCE,
     appVersion: APP_VERSION,
+    schemaVersion: SCHEMA_VERSION,
+    questionnaireVersion: QUESTIONNAIRE_VERSION,
+    resultVersion: RESULT_VERSION,
     page: typeof window !== "undefined" ? window.location.pathname : "/",
     payload: { ...data, submittedAt: new Date().toISOString() },
   });

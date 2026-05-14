@@ -887,13 +887,7 @@ export default function ClassifierShell() {
       console.info("[tracking] final snapshot sent", sentCount);
 
       // ── 5. quiz_result — only after all snapshots are done ─────
-      const answerCount = Object.values({
-        ...state.coreAxisAnswers,
-        ...state.flavorProfileAnswers,
-        ...state.proteinPreferenceAnswers,
-        ...state.noodleAnswers,
-        ...state.toppingAnswers,
-      }).filter((v): v is number => typeof v === "number" && Number.isFinite(v)).length;
+      const answerCount = snapshotEvents.length;
 
       trackQuizResult({
         quizRunId: runId,

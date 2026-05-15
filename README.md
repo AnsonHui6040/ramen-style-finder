@@ -13,6 +13,7 @@
 - 食材接受度分析
 - 麵條與配料細節調整
 - 過敏原排除與警示
+- 邊界型態提示（顯示最接近的相鄰型與軸向差異）
 - 正式結果頁：
   - 主型碼
   - 主型名稱
@@ -21,6 +22,7 @@
   - 食材方向標識
   - 最接近的實際風格
   - 原因與推薦比例
+- 匿名分析追蹤（可選，設定後自動啟用）
 
 ---
 
@@ -62,7 +64,7 @@ npm run check
 
 ## Docker 建置
 
-本專案使用 Next.js `standalone` 輸出模式，可用 Docker 建置正式映像：
+本專案使用 Next.js 靜態輸出模式（`output: 'export'`），以 nginx 提供靜態檔案服務。
 
 ```bash
 docker build -t ramen-style-finder .
@@ -75,6 +77,30 @@ docker run --rm -p 3000:80 ramen-style-finder
 http://localhost:3000
 ```
 
+> 容器內以 nginx 監聽 port 80，`-p 3000:80` 對應至本機 3000 埠。
+
+---
+
+## 匿名分析追蹤
+
+本專案內建匿名事件追蹤，**預設停用**。設定後可追蹤以下事件：
+
+| 事件 | 說明 |
+|---|---|
+| `quiz_started` | 使用者開始作答 |
+| `question_answer` | 每題作答與最終快照 |
+| `quiz_result` | 分類結果與四軸分值 |
+| `feedback` | 使用者滿意度回饋 |
+
+啟用方式：在 `.env.local` 加入：
+
+```bash
+NEXT_PUBLIC_COLLECT_API_URL=https://your-api-url/collect
+```
+
+若未設定此變數，所有追蹤函式為靜默無動作（no-op），不影響任何功能。  
+本系統不收集任何個人識別資料（姓名、電話、電子郵件等）。
+
 ---
 
 ## 專案結構
@@ -82,10 +108,15 @@ http://localhost:3000
 - `app/`：Next.js App Router 頁面
 - `components/`：UI 元件與主容器
 - `data/`：題庫、分類分支與原型資料
-- `lib/`：reducer、推定邏輯、計分邏輯
+- `lib/archetype.ts`：原型推定邏輯
+- `lib/borderline-type.ts`：邊界型態提示計算
+- `lib/ingredient-tags.ts`：食材標識工具
+- `lib/reducer.ts`：問卷狀態管理
+- `lib/scoring.ts`：計分邏輯
+- `lib/tracking.ts`：匿名分析追蹤
 - `types/`：型別定義
 - `.github/workflows/`：GitHub Actions 自動建置流程
-- `Dockerfile`：正式部署映像建置設定
+- `Dockerfile`：靜態輸出 + nginx 正式部署映像
 
 ---
 
@@ -102,9 +133,18 @@ http://localhost:3000
 | 前端狀態防呆 | 清洗 `localStorage` 還原資料 | 避免舊版、損壞或被手動改寫的本地資料污染流程 |
 | 輸入值限制 | 將滑桿數值限制於 0–100 | 保持計分邏輯穩定，避免異常數值影響結果 |
 | Docker 建置 | 使用 `npm ci` 與 `package-lock.json` | 提高依賴安裝的一致性與可重現性 |
-| Docker 正式映像 | 使用非 root 使用者執行 | 降低容器執行時權限風險 |
+| Docker 正式映像 | 改用 nginx 提供靜態輸出 | 移除 Node.js runtime，減少攻擊面與映像大小 |
 | 部署前檢查 | Docker build 階段執行 typecheck + build | 讓型別錯誤能在部署前被攔截 |
 | 開發指令 | 新增 `npm run check` | 方便在 VS Code 或部署前一次檢查 |
+
+### 2026-05-15
+
+| 類別 | 已處理項目 | 目的 |
+|---|---|---|
+| 分析追蹤 | 加入匿名事件追蹤模組（`lib/tracking.ts`） | 在不收集個人資料的前提下了解使用行為 |
+| 追蹤資料品質 | 完善 `quiz_result` 欄位（原型碼、信心分數、邊界型等） | 提升下游分析的資料完整性 |
+| 最終快照修正 | 以 50ms 間隔循序傳送最終答案快照 | 避免 API 收到重複事件的問題 |
+| 邊界型態 | 加入 `lib/borderline-type.ts` 計算最接近相鄰型 | 提供更細緻的分類說明 |
 
 ---
 

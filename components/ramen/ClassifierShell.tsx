@@ -64,6 +64,41 @@ const FLOW_STEPS: Array<{ state: FlowState; label: string }> = [
 
 const QUICK_VALUES = [0, 25, 50, 75, 100];
 
+const BROTH_PROFILE_OPTIONS = [
+  {
+    id: "light_chintan",
+    title: "清爽清湯",
+    description: "透明、乾淨、喝起來俐落。",
+    axis_richness: 25,
+    axis_broth_body: 25,
+  },
+  {
+    id: "rich_chintan",
+    title: "濃厚清湯",
+    description: "清湯輪廓，但味道更厚。",
+    axis_richness: 75,
+    axis_broth_body: 25,
+  },
+  {
+    id: "light_paitan",
+    title: "清爽白湯",
+    description: "有白湯包覆感，但不厚重。",
+    axis_richness: 25,
+    axis_broth_body: 75,
+  },
+  {
+    id: "rich_paitan",
+    title: "濃厚白湯",
+    description: "奶白、厚重、存在感強。",
+    axis_richness: 75,
+    axis_broth_body: 75,
+  },
+] as const;
+
+const CORE_AXES_FOLLOW_UP_QUESTIONS = CORE_AXES_QUESTIONS.filter(
+  (question) => question.id === "axis_impact" || question.id === "axis_noodle_body",
+);
+
 function progressValue(state: FlowState): number {
   const index = FLOW_STEPS.findIndex((item) => item.state === state);
   if (index <= 0) return 0;
@@ -96,7 +131,7 @@ function pageDescription(state: FlowState): string {
     case "INTRO":
       return "這是一個以整體口味偏好為核心的拉麵分類器，透過逐步問卷分析湯頭、風味、麵體與食材接受度，幫助你找出最適合自己的拉麵口味風格與相近類型。";
     case "CORE_AXES":
-      return "先不用想流派名字，直接回答你想吃得清爽一點、濃一點、重口一點，還是麵體更有存在感。";
+      return "先選一個最接近的湯底輪廓，再補你想吃得溫和或重口，以及麵體要細滑還是粗嚼。";
     case "FLAVOR_PROFILE":
       return "這一步是在抓你喜歡的是肉香、海味、發酵感，還是那種清香轉味的感覺。";
     case "PROTEIN_PREFERENCES":
@@ -252,6 +287,40 @@ function SliderCard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function BrothProfileCard({
+  option,
+  selected,
+  onSelect,
+}: {
+  option: (typeof BROTH_PROFILE_OPTIONS)[number];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button type="button" onClick={onSelect} aria-pressed={selected} className="block h-full w-full min-w-0 text-left">
+      <Card
+        className={`relative h-full ${selected ? "border-ink bg-ink shadow-[4px_4px_0_oklch(0.42_0.01_60/0.18)]" : "border-ink-soft bg-paper-light"}`}
+      >
+        {selected ? (
+          <div className="absolute right-2 top-2 rounded-full border border-white/20 bg-white/12 px-2 py-0.5 font-code text-[10px] uppercase tracking-widest text-white sm:right-3 sm:top-3">
+            已選擇
+          </div>
+        ) : null}
+        <CardContent className="flex min-h-[112px] flex-col items-start px-4 pb-4 pt-4 sm:min-h-[128px] sm:px-4 sm:pb-4 sm:pt-4">
+          <div className="w-full min-w-0 pr-12">
+            <CardTitle className={`text-sm leading-7 sm:text-base ${selected ? "text-white" : "text-ink"}`}>
+              {option.title}
+            </CardTitle>
+            <CardDescription className={`mt-2 w-full min-w-0 text-xs leading-6 sm:text-sm ${selected ? "text-white/72" : "text-ink-soft"}`}>
+              {option.description}
+            </CardDescription>
+          </div>
+        </CardContent>
+      </Card>
+    </button>
   );
 }
 
@@ -939,14 +1008,67 @@ export default function ClassifierShell() {
         return introView;
 
       case "CORE_AXES":
-        return renderQuestionList<CoreAxisAnswers>({
-          questions: CORE_AXES_QUESTIONS,
-          values: state.coreAxisAnswers,
-          onChange: (id, value) => {
-            dispatch({ type: "ANSWER_CORE_AXIS", payload: { id: id as keyof CoreAxisAnswers, value } });
-            trackAnswer(id, value, "CORE_AXES", CORE_AXES_QUESTIONS);
-          },
-        });
+        return (
+          <div className="space-y-6">
+            <Card className="border-ink-soft">
+              <CardHeader>
+                <CardTitle className="text-base leading-6">你現在比較想吃哪一種湯底？</CardTitle>
+                <CardDescription className="leading-6">
+                  直接選最接近你現在想吃的湯感。清爽／濃厚代表厚度，清湯／白湯代表湯體。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="hidden sm:grid sm:grid-cols-[52px_minmax(0,1fr)] sm:gap-x-3 sm:gap-y-4">
+                  <div />
+                  <div className="flex items-center justify-center gap-2 px-1 py-1 text-sm font-medium text-ink-soft">
+                    <span>清爽</span>
+                    <span aria-hidden="true">→</span>
+                    <span>濃厚</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-x-2 gap-y-3 sm:grid-cols-[52px_minmax(0,1fr)] sm:gap-x-3 sm:gap-y-4">
+                  <div className="hidden sm:flex sm:flex-col sm:items-center sm:justify-center sm:gap-1 sm:py-1 sm:text-sm sm:font-medium sm:text-ink-soft">
+                    <span>清湯</span>
+                    <span aria-hidden="true">↓</span>
+                    <span>白湯</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+                    {BROTH_PROFILE_OPTIONS.map((option) => {
+                      const selected =
+                        state.coreAxisAnswers.axis_richness === option.axis_richness &&
+                        state.coreAxisAnswers.axis_broth_body === option.axis_broth_body;
+
+                      return (
+                        <BrothProfileCard
+                          key={option.id}
+                          option={option}
+                          selected={selected}
+                          onSelect={() => {
+                            dispatch({ type: "ANSWER_CORE_AXIS", payload: { id: "axis_richness", value: option.axis_richness } });
+                            dispatch({ type: "ANSWER_CORE_AXIS", payload: { id: "axis_broth_body", value: option.axis_broth_body } });
+                            trackAnswer("axis_richness", option.axis_richness, "CORE_AXES", CORE_AXES_QUESTIONS);
+                            trackAnswer("axis_broth_body", option.axis_broth_body, "CORE_AXES", CORE_AXES_QUESTIONS);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {renderQuestionList<CoreAxisAnswers>({
+              questions: CORE_AXES_FOLLOW_UP_QUESTIONS,
+              values: state.coreAxisAnswers,
+              onChange: (id, value) => {
+                dispatch({ type: "ANSWER_CORE_AXIS", payload: { id: id as keyof CoreAxisAnswers, value } });
+                trackAnswer(id, value, "CORE_AXES", CORE_AXES_QUESTIONS);
+              },
+            })}
+          </div>
+        );
 
       case "FLAVOR_PROFILE":
         return renderQuestionList<FlavorProfileAnswers>({

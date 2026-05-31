@@ -34,7 +34,6 @@ import {
 import type {
   AllergenAnswers,
   ClassifierState,
-  CoreAxisAnswers,
   FlavorProfileAnswers,
   FlowState,
   NoodleAnswers,
@@ -95,10 +94,6 @@ const BROTH_PROFILE_OPTIONS = [
   },
 ] as const;
 
-const CORE_AXES_FOLLOW_UP_QUESTIONS = CORE_AXES_QUESTIONS.filter(
-  (question) => question.id === "axis_impact" || question.id === "axis_noodle_body",
-);
-
 function progressValue(state: FlowState): number {
   const index = FLOW_STEPS.findIndex((item) => item.state === state);
   if (index <= 0) return 0;
@@ -131,13 +126,13 @@ function pageDescription(state: FlowState): string {
     case "INTRO":
       return "這是一個以整體口味偏好為核心的拉麵分類器，透過逐步問卷分析湯頭、風味、麵體與食材接受度，幫助你找出最適合自己的拉麵口味風格與相近類型。";
     case "CORE_AXES":
-      return "先選一個最接近的湯底輪廓，再補你想吃得溫和或重口，以及麵體要細滑還是粗嚼。";
+      return "先用湯底輪廓抓大方向；重口感與麵體存在感會在後面的細分題補回來。";
     case "FLAVOR_PROFILE":
-      return "這一步是在抓你喜歡的是肉香、海味、發酵感，還是那種清香轉味的感覺。";
+      return "這一步是在抓你喜歡的是肉香、海味、發酵感，還是那種清香轉味的感覺；香料感也會補足你的重口軸。";
     case "PROTEIN_PREFERENCES":
       return "這裡不是逼你先選一種肉，而是看看你對牛香、鴨香、蝦鮮、貝鮮這些方向有多喜歡。";
     case "NOODLE_TOPPING":
-      return "麵在這版的影響力拉高了，所以這一步不只是補充，真的會影響你最後是哪一型。";
+      return "麵條題現在會直接決定你的麵體軸，而蒜與背脂等配料也會補足你偏溫和還是重口。";
     case "ALLERGENS":
       return "高風險素材會直接排除，中度風險則會提醒你注意。";
     case "RESULT_VIEW":
@@ -916,25 +911,29 @@ export default function ClassifierShell() {
       });
 
       // ── 3. Validate snapshot count ──────────────────────────────
+      const allIds = [
+        ...CORE_AXES_QUESTIONS.map((q) => q.id),
+        ...FLAVOR_PROFILE_QUESTIONS.map((q) => q.id),
+        ...PROTEIN_PREFERENCE_QUESTIONS.map((q) => q.id),
+        ...NOODLE_QUESTIONS.map((q) => q.id),
+        ...TOPPING_QUESTIONS.map((q) => q.id),
+        ...ALLERGEN_OPTIONS.map((o) => o.id),
+      ];
+      const expectedSnapshotCount = allIds.length;
+
       console.info(
         "[tracking] final snapshot prepared",
         snapshotEvents.length,
         snapshotEvents.map((e) => e.questionId),
       );
 
-      if (snapshotEvents.length !== 39) {
-        const allIds = [
-          ...CORE_AXES_QUESTIONS.map((q) => q.id),
-          ...FLAVOR_PROFILE_QUESTIONS.map((q) => q.id),
-          ...PROTEIN_PREFERENCE_QUESTIONS.map((q) => q.id),
-          ...NOODLE_QUESTIONS.map((q) => q.id),
-          ...TOPPING_QUESTIONS.map((q) => q.id),
-          ...ALLERGEN_OPTIONS.map((o) => o.id),
-        ];
+      if (snapshotEvents.length !== expectedSnapshotCount) {
         const sentIds = new Set(snapshotEvents.map((e) => e.questionId));
         const missing = allIds.filter((id) => !sentIds.has(id));
         console.warn(
-          "[tracking] final snapshot count mismatch, expected 39 got",
+          "[tracking] final snapshot count mismatch, expected",
+          expectedSnapshotCount,
+          "got",
           snapshotEvents.length,
           "missing:",
           missing,
@@ -1014,7 +1013,7 @@ export default function ClassifierShell() {
               <CardHeader>
                 <CardTitle className="text-base leading-6">你現在比較想吃哪一種湯底？</CardTitle>
                 <CardDescription className="leading-6">
-                  直接選最接近你現在想吃的湯感。清爽／濃厚代表厚度，清湯／白湯代表湯體。
+                  直接選最接近你現在想吃的湯感。清爽／濃厚代表厚度，清湯／白湯代表湯體；重口感與麵體會在後面的細分題補回來。
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1058,15 +1057,6 @@ export default function ClassifierShell() {
                 </div>
               </CardContent>
             </Card>
-
-            {renderQuestionList<CoreAxisAnswers>({
-              questions: CORE_AXES_FOLLOW_UP_QUESTIONS,
-              values: state.coreAxisAnswers,
-              onChange: (id, value) => {
-                dispatch({ type: "ANSWER_CORE_AXIS", payload: { id: id as keyof CoreAxisAnswers, value } });
-                trackAnswer(id, value, "CORE_AXES", CORE_AXES_QUESTIONS);
-              },
-            })}
           </div>
         );
 

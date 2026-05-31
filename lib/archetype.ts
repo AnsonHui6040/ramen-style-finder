@@ -29,17 +29,15 @@ export function computeArchetypeAxes(state: ClassifierState): ArchetypeAxes {
   ]);
 
   const impactAxis = weightedAverage([
-    { value: n(state.coreAxisAnswers.axis_impact), weight: 0.60 },
-    { value: n(state.flavorProfileAnswers.flavor_spice), weight: 0.15 },
-    { value: n(state.toppingAnswers.topping_garlic), weight: 0.15 },
-    { value: n(state.toppingAnswers.topping_backfat), weight: 0.10 },
+    { value: n(state.flavorProfileAnswers.flavor_spice), weight: 0.60 },
+    { value: n(state.toppingAnswers.topping_garlic), weight: 0.25 },
+    { value: n(state.toppingAnswers.topping_backfat), weight: 0.15 },
   ]);
 
   const noodleBodyAxis = weightedAverage([
-    { value: n(state.coreAxisAnswers.axis_noodle_body), weight: 0.55 },
-    { value: n(state.noodleAnswers.noodle_thickness), weight: 0.20 },
-    { value: n(state.noodleAnswers.noodle_chewiness), weight: 0.15 },
-    { value: n(state.noodleAnswers.noodle_firmness), weight: 0.10 },
+    { value: n(state.noodleAnswers.noodle_thickness), weight: 0.45 },
+    { value: n(state.noodleAnswers.noodle_chewiness), weight: 0.35 },
+    { value: n(state.noodleAnswers.noodle_firmness), weight: 0.20 },
   ]);
 
   return {

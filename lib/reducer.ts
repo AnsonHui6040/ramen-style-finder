@@ -13,7 +13,7 @@ import type {
   ToppingAnswers,
 } from "@/types/ramen";
 
-const CORE_AXIS_IDS = ["axis_richness", "axis_broth_body", "axis_impact", "axis_noodle_body"] as const;
+const CORE_AXIS_IDS = ["axis_richness", "axis_broth_body"] as const;
 const FLAVOR_PROFILE_IDS = ["flavor_meat_vs_sea", "flavor_fermented", "flavor_citrus", "flavor_spice", "flavor_fatty_sweet"] as const;
 const PROTEIN_PREFERENCE_IDS = [
   "protein_pork",
@@ -191,7 +191,7 @@ export function createDefaultClassifierState(): ClassifierState {
 }
 
 function buildValidation(state: ClassifierState): ClassifierState["validation"] {
-  const coreAxesValid = countAnsweredNumbers(state.coreAxisAnswers, CORE_AXIS_IDS) >= 4;
+  const coreAxesValid = countAnsweredNumbers(state.coreAxisAnswers, CORE_AXIS_IDS) >= 2;
   const flavorProfileValid = countAnsweredNumbers(state.flavorProfileAnswers, FLAVOR_PROFILE_IDS) >= 4;
   const proteinPreferencesValid = countAnsweredNumbers(state.proteinPreferenceAnswers, PROTEIN_PREFERENCE_IDS) >= 5;
   const noodleCount = countAnsweredNumbers(state.noodleAnswers, NOODLE_IDS);
@@ -240,7 +240,7 @@ function withValidation(state: ClassifierState): ClassifierState {
 }
 
 function maybeBuildArchetypePreview(state: ClassifierState) {
-  if (countAnsweredNumbers(state.coreAxisAnswers, CORE_AXIS_IDS) < 4) return null;
+  if (countAnsweredNumbers(state.coreAxisAnswers, CORE_AXIS_IDS) < 2) return null;
   try {
     return computeArchetypeResult(state);
   } catch {

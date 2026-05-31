@@ -14,7 +14,7 @@
 const SOURCE = "ramen-style-finder";
 const APP_VERSION = "1.0.0";
 const SCHEMA_VERSION = "2026-05-15";
-const QUESTIONNAIRE_VERSION = "v1";
+const QUESTIONNAIRE_VERSION = "v2";
 const RESULT_VERSION = "v1";
 
 function getApiUrl(): string | null {
